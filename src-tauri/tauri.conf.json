@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "ndisc.play",
+        "title": "nplay",
         "width": 1380,
         "height": 820,
         "minWidth": 940,
