@@ -13,6 +13,8 @@ interface NowPlayingProps {
   volume: number;
   /** Shared handle so the app transport (header/footer) drives the <video>. */
   elRef: RefObject<HTMLVideoElement | null>;
+  /** Detected BPM for the current track, or null while pending/unknown. */
+  bpm: number | null;
 }
 
 // The unified stage: the media square shows album art for audio and the live
@@ -27,6 +29,7 @@ export function NowPlaying({
   mediaBase,
   volume,
   elRef,
+  bpm,
 }: NowPlayingProps) {
   const cover = album?.coverPath ?? null;
   const [errored, setErrored] = useState<string | null>(null);
@@ -38,6 +41,7 @@ export function NowPlaying({
   if (track?.codec) meta.push(track.codec);
   if (track?.sampleRate) meta.push(`${(track.sampleRate / 1000).toFixed(1)} kHz`);
   if (track?.bitDepth) meta.push(`${track.bitDepth}-bit`);
+  if (bpm != null) meta.push(`${bpm} BPM`);
 
   function goFullscreen() {
     try {
@@ -50,7 +54,10 @@ export function NowPlaying({
   return (
     <div className="flex flex-col items-center gap-3">
       {showVideo ? (
-        <div className="group/vid relative w-full aspect-video rounded-xl bg-black overflow-hidden">
+        <div className="group/vid relative w-full aspect-video max-h-[55vh] mx-auto rounded-xl bg-surface/40 border border-surface/60 overflow-hidden shadow-inner">
+          {/* object-contain over the grey panel tone: a clip smaller than the
+              area (or a non-16:9 aspect) sits centred with the surface filling
+              the letterbox/pillarbox rather than hard black. */}
           <video
             key={track!.path}
             ref={elRef}
@@ -62,7 +69,7 @@ export function NowPlaying({
               e.currentTarget.volume = volume;
             }}
             onError={() => setVideoError(true)}
-            className="w-full h-full object-contain bg-black"
+            className="w-full h-full object-contain"
           />
           <button
             onClick={goFullscreen}
@@ -78,7 +85,7 @@ export function NowPlaying({
           )}
         </div>
       ) : (
-        <div className="w-full aspect-square rounded-xl bg-surface/40 border border-surface/60 overflow-hidden flex items-center justify-center shadow-inner">
+        <div className="w-full max-w-[18rem] aspect-square rounded-xl bg-surface/40 border border-surface/60 overflow-hidden flex items-center justify-center shadow-inner">
           {showImage ? (
             <img
               src={fileSrc(cover)}
@@ -102,12 +109,12 @@ export function NowPlaying({
           <div className="text-sm text-fg/70 truncate" title={album?.artist}>
             {album?.artist ?? ""}
           </div>
-          <div className="text-[13px] text-muted truncate">
+          <div className="text-[13px] text-fg/65 truncate">
             {album?.album}
             {album?.year != null ? ` · ${album.year}` : ""}
           </div>
           {meta.length > 0 && (
-            <div className="mt-1 text-[11px] text-muted/80 tabular-nums">
+            <div className="mt-1 text-[11px] text-fg/55 tabular-nums">
               {meta.join("  ·  ")}
             </div>
           )}

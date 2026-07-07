@@ -210,7 +210,7 @@ function LibraryTreeImpl({
                             {al.album}
                           </span>
                           {al.year != null && (
-                            <span className="shrink-0 px-1.5 py-0.5 bg-surface/60 text-muted text-[11px] tabular-nums">
+                            <span className="shrink-0 px-1.5 py-0.5 bg-digital/10 group-hover:bg-digital/25 text-digital text-[11px] tabular-nums transition-colors">
                               {al.year}
                             </span>
                           )}
@@ -221,14 +221,14 @@ function LibraryTreeImpl({
                         <button
                           onClick={() => playAlbum(al.id, 0)}
                           title="Play album"
-                          className="opacity-0 group-hover:opacity-100 text-muted hover:text-accent shrink-0 transition-opacity"
+                          className="text-muted/50 hover:text-accent shrink-0 transition-colors"
                         >
                           <Play size={13} />
                         </button>
                         <button
                           onClick={() => addAlbum(al.id)}
                           title="Add album to playlist"
-                          className="opacity-0 group-hover:opacity-100 text-muted hover:text-accent shrink-0 transition-opacity"
+                          className="text-muted/50 hover:text-accent shrink-0 transition-colors"
                         >
                           <Plus size={13} />
                         </button>
@@ -318,7 +318,7 @@ function LibraryTreeImpl({
                                 <button
                                   onClick={() => onAddToPlaylist([t])}
                                   title="Add to playlist"
-                                  className="opacity-0 group-hover:opacity-100 text-muted hover:text-accent shrink-0 transition-opacity"
+                                  className="text-muted/50 hover:text-accent shrink-0 transition-colors"
                                 >
                                   <Plus size={13} />
                                 </button>

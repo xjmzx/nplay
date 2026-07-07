@@ -121,6 +121,12 @@ export function libraryDbPath(): Promise<string> {
   return invoke("library_db_path");
 }
 
+/** Detected BPM for a track (cached in the DB after the first analysis).
+ *  Resolves null when it can't be determined (aubio missing / undetectable). */
+export function trackBpm(id: number): Promise<number | null> {
+  return invoke("track_bpm", { id });
+}
+
 /** Open the OS file manager with the given file selected. */
 export function revealInFileManager(path: string): Promise<void> {
   return revealItemInDir(path);

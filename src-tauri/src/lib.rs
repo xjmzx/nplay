@@ -140,7 +140,8 @@ CREATE TABLE IF NOT EXISTS tracks (
   sample_rate INTEGER,
   bit_depth   INTEGER,
   is_video    INTEGER NOT NULL DEFAULT 0,
-  playable    INTEGER NOT NULL DEFAULT 1
+  playable    INTEGER NOT NULL DEFAULT 1,
+  bpm         REAL
 );
 CREATE INDEX IF NOT EXISTS idx_tracks_album ON tracks(album_id);
 CREATE INDEX IF NOT EXISTS idx_albums_artist ON albums(artist);
@@ -154,6 +155,8 @@ fn open(app: &AppHandle) -> Result<Connection, String> {
         "ALTER TABLE tracks ADD COLUMN playable INTEGER NOT NULL DEFAULT 1",
         [],
     );
+    // Migrate DBs created before `bpm` existed (populated lazily on play).
+    let _ = conn.execute("ALTER TABLE tracks ADD COLUMN bpm REAL", []);
     Ok(conn)
 }
 
@@ -963,6 +966,94 @@ fn library_db_path(app: AppHandle) -> Result<String, String> {
     Ok(db_path(&app)?.to_string_lossy().into_owned())
 }
 
+/// BPM for a track, detected lazily via `aubio tempo` and cached in the DB
+/// (whole-number). Returns `Ok(Some(bpm))` once known, `Ok(None)` when it
+/// can't be determined (aubio not installed, too few beats, etc.) so the UI
+/// can silently show nothing rather than surface an error. Runs off the
+/// webview thread like the other sync commands, so the ~1–3s first analysis
+/// doesn't stall playback.
+#[tauri::command]
+fn track_bpm(app: AppHandle, id: i64) -> Result<Option<f64>, String> {
+    let conn = open(&app)?;
+    let (path, cached): (String, Option<f64>) = conn
+        .query_row(
+            "SELECT path, bpm FROM tracks WHERE id = ?1",
+            params![id],
+            |r| Ok((r.get(0)?, r.get::<_, Option<f64>>(1)?)),
+        )
+        .map_err(|e| e.to_string())?;
+    if let Some(b) = cached {
+        return Ok(Some(b));
+    }
+    // aubio reads FLAC/MP3/… (and a video's audio track) directly — no
+    // transcode needed for whole-file analysis.
+    let bpm = match compute_bpm(&path) {
+        Ok(v) => v,
+        Err(_) => return Ok(None),
+    };
+    let _ = conn.execute("UPDATE tracks SET bpm = ?1 WHERE id = ?2", params![bpm, id]);
+    Ok(Some(bpm))
+}
+
+/// Run `aubio tempo` on a file and return a whole-number BPM. aubio 0.4.x
+/// prints a single `"<bpm> bpm"` summary line; older/other builds stream one
+/// beat timestamp per line — handle both (summary first, else 60 / median
+/// inter-beat interval, robust to a stray missed/extra beat).
+fn compute_bpm(path: &str) -> Result<f64, String> {
+    if !Path::new(path).is_file() {
+        return Err(format!("not a file: {path}"));
+    }
+    let output = Command::new("aubio")
+        .args(["tempo", path])
+        .output()
+        .map_err(|e| {
+            if e.kind() == std::io::ErrorKind::NotFound {
+                "aubio not found on PATH — install aubio-tools".to_string()
+            } else {
+                format!("aubio launch failed: {e}")
+            }
+        })?;
+    if !output.status.success() {
+        return Err(format!(
+            "aubio failed: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
+    let stdout = String::from_utf8_lossy(&output.stdout);
+
+    // Summary form: a "<bpm> bpm" line (aubio 0.4.x default).
+    for line in stdout.lines() {
+        let l = line.trim();
+        if l.ends_with("bpm") {
+            if let Some(v) = l
+                .split_whitespace()
+                .next()
+                .and_then(|t| t.parse::<f64>().ok())
+            {
+                if v > 0.0 {
+                    return Ok(v.round());
+                }
+            }
+        }
+    }
+
+    // Stream form: one beat timestamp (seconds) per line → 60 / median.
+    let beats: Vec<f64> = stdout
+        .lines()
+        .filter_map(|l| l.trim().parse::<f64>().ok())
+        .collect();
+    if beats.len() < 2 {
+        return Err(format!("no bpm summary / too few beats ({})", beats.len()));
+    }
+    let mut intervals: Vec<f64> = beats.windows(2).map(|w| w[1] - w[0]).collect();
+    intervals.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    let median = intervals[intervals.len() / 2];
+    if median <= 0.0 {
+        return Err("median beat interval is zero".into());
+    }
+    Ok((60.0 / median).round())
+}
+
 // ---- native audio playback (rodio) ---------------------------------------
 //
 // WebKit2GTK's media element here refuses to play from any app URI scheme
@@ -1634,6 +1725,7 @@ pub fn run() {
             write_text_file,
             default_playlist_dir,
             library_db_path,
+            track_bpm,
             audio_play,
             audio_pause,
             audio_resume,

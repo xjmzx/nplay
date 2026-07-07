@@ -51,6 +51,7 @@ import {
   readTextFile,
   scanLibrary,
   setMusicRoot,
+  trackBpm,
   tracksByPaths,
   writeTextFile,
   type Album,
@@ -198,6 +199,24 @@ export default function App() {
     return m;
   }, [albums]);
   const currentAlbum = current ? albumById.get(current.albumId) ?? null : null;
+
+  // Detected BPM for the current track — reset on track change, then filled
+  // in lazily (aubio runs off-thread; cached in the DB after the first pass).
+  const [bpm, setBpm] = useState<number | null>(null);
+  useEffect(() => {
+    setBpm(null);
+    const id = current?.id;
+    if (id == null) return;
+    let alive = true;
+    trackBpm(id)
+      .then((v) => {
+        if (alive) setBpm(v);
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [current?.id]);
 
   // --- data loading ---------------------------------------------------------
   async function refreshAlbums() {
@@ -731,7 +750,7 @@ export default function App() {
   const mainCols = [
     colCollapsed ? "2.5rem" : "minmax(0, 1fr)",
     plCollapsed ? "2.5rem" : "minmax(0, 1fr)",
-    npCollapsed ? "2.5rem" : "minmax(300px, 0.8fr)",
+    npCollapsed ? "2.5rem" : "minmax(300px, 0.55fr)",
   ].join(" ");
 
   const albumCount = albums.length;
@@ -1041,6 +1060,7 @@ export default function App() {
                 mediaBase={mediaBaseUrl}
                 volume={volume}
                 elRef={videoElRef}
+                bpm={bpm}
               />
             </Section>
             <Section
@@ -1048,7 +1068,6 @@ export default function App() {
               icon={<AudioLines size={15} />}
               elastic
               className="flex-1"
-              onTitleClick={() => setNpCollapsed(true)}
             >
               <div className="flex-1 min-h-0">
                 {/* Only animate while actually playing — gating on a loaded

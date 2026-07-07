@@ -258,14 +258,14 @@ function PlaylistImpl({
                 <button
                   onClick={() => revealInFileManager(t.path).catch(() => {})}
                   title="Show in file browser"
-                  className="opacity-0 group-hover:opacity-100 text-muted hover:text-accent shrink-0 transition-opacity"
+                  className="text-muted/50 hover:text-accent shrink-0 transition-colors"
                 >
                   <FolderSearch size={13} />
                 </button>
                 <button
                   onClick={() => onRemove(i)}
                   title="Remove"
-                  className="opacity-0 group-hover:opacity-100 text-muted hover:text-alert shrink-0 transition-opacity"
+                  className="text-muted/50 hover:text-alert shrink-0 transition-colors"
                 >
                   <X size={13} />
                 </button>
