@@ -78,7 +78,7 @@ export function CurrentView({ active }: { active: boolean }) {
                     {n.topics.map((t) => (
                       <span
                         key={t}
-                        className="text-[10px] px-1.5 py-0.5 rounded-full bg-digital/15 text-digital"
+                        className="text-[10px] px-1.5 py-0.5 bg-digital/15 text-digital"
                       >
                         {t}
                       </span>

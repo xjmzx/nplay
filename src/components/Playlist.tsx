@@ -80,7 +80,7 @@ function PlaylistImpl({
         <button
           onClick={() => onPlayAt(0)}
           disabled={!tracks.length}
-          className="flex items-center gap-1.5 text-[12px] px-2 py-1 rounded-md bg-surface/70 hover:bg-surfaceHover disabled:opacity-40 transition-colors"
+          className="flex items-center gap-1.5 text-[12px] px-2 py-1 bg-surface/70 hover:bg-surfaceHover disabled:opacity-40 transition-colors"
           title="Play playlist"
         >
           <Play size={13} /> Play
@@ -104,7 +104,7 @@ function PlaylistImpl({
               />
               <div
                 role="menu"
-                className="absolute right-0 top-full mt-1 z-20 flex flex-col rounded-md border border-surface bg-panel py-1 text-[12px] shadow-lg"
+                className="absolute right-0 top-full mt-1 z-20 flex flex-col border border-surface bg-panel py-1 text-[12px] shadow-lg"
               >
                 {SORT_OPTIONS.map(([key, label]) => (
                   <button
@@ -203,7 +203,7 @@ function PlaylistImpl({
                   setOverIndex(null);
                 }}
                 className={cn(
-                  "group flex items-center gap-2 px-2 py-1 rounded hover:bg-surface/50 text-[13px]",
+                  "group flex items-center gap-2 px-2 py-1 hover:bg-surface/50 text-[13px]",
                   active && "bg-surface/70",
                   dragIndex === i && "opacity-40",
                   overIndex === i &&
@@ -246,7 +246,7 @@ function PlaylistImpl({
                   </span>
                 </div>
                 {unplayable && (
-                  <span className="shrink-0 text-[9px] font-medium tracking-wide text-auburn border border-auburn/40 rounded px-1 leading-tight">
+                  <span className="shrink-0 text-[9px] font-medium tracking-wide text-auburn border border-auburn/40 px-1 leading-tight">
                     {t.codec ?? "?"}
                   </span>
                 )}

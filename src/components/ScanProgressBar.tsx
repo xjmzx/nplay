@@ -38,9 +38,9 @@ export function ScanProgressBar({
 
   return (
     <div className="flex items-center gap-2" title="Scan progress">
-      <div className="w-20 h-1 rounded-full bg-surface/60 overflow-hidden">
+      <div className="w-20 h-1 bg-surface/60 overflow-hidden">
         {indeterminate ? (
-          <div className="h-full w-1/3 bg-accent/70 animate-pulse rounded-full" />
+          <div className="h-full w-1/3 bg-accent/70 animate-pulse" />
         ) : (
           <div
             className={

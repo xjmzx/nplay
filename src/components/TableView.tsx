@@ -184,7 +184,7 @@ export function TableView({
             value={filter}
             onChange={(e) => setFilter(e.target.value)}
             placeholder="Filter artist / album / title…"
-            className="w-full pl-7 pr-2 py-1 rounded bg-surface/60 text-[12px] placeholder:text-muted/60 focus:outline-none focus:ring-1 focus:ring-accent/40"
+            className="w-full pl-7 pr-2 py-1 bg-surface/60 text-[12px] placeholder:text-muted/60 focus:outline-none focus:ring-1 focus:ring-accent/40"
           />
         </div>
       </div>
@@ -395,7 +395,7 @@ function Cell({
         }}
         spellCheck={false}
         className={cn(
-          "w-full h-6 px-1.5 rounded bg-surface text-fg outline-none border border-accent/50 text-xs disabled:opacity-50",
+          "w-full h-6 px-1.5 bg-surface text-fg outline-none border border-accent/50 text-xs disabled:opacity-50",
           numeric && "text-right tabular-nums",
         )}
       />
@@ -407,7 +407,7 @@ function Cell({
       onClick={(e) => e.stopPropagation()}
       onDoubleClick={(e) => e.stopPropagation()}
       className={cn(
-        "group h-6 flex items-center gap-1 rounded min-w-0 border border-transparent hover:border-accent/40 hover:bg-surface/70 transition-colors",
+        "group h-6 flex items-center gap-1 min-w-0 border border-transparent hover:border-accent/40 hover:bg-surface/70 transition-colors",
         numeric && "justify-end",
       )}
     >

@@ -167,17 +167,17 @@ function LibraryTreeImpl({
           <div key={g.artist}>
             <button
               onClick={() => toggleArtist(g.artist)}
-              className="w-full flex items-center gap-1.5 px-1 py-1 rounded hover:bg-surface/50 text-left"
+              className="group/row w-full flex items-center gap-1.5 py-0.5 text-left"
             >
               {artistOpen ? (
                 <ChevronDown size={14} className="text-muted shrink-0" />
               ) : (
                 <ChevronRight size={14} className="text-muted shrink-0" />
               )}
-              <span className="truncate min-w-0 rounded-full px-2 py-0.5 bg-mauve/15 text-mauve font-medium">
+              <span className="flex-1 truncate min-w-0 px-2 py-0.5 bg-mauve/10 group-hover/row:bg-mauve/25 text-mauve font-medium transition-colors">
                 {g.artist}
               </span>
-              <span className="ml-auto text-[11px] text-muted tabular-nums shrink-0">
+              <span className="shrink-0 min-w-[2.25rem] px-2 py-0.5 bg-mauve/10 group-hover/row:bg-mauve/25 text-mauve/80 text-[11px] tabular-nums text-center transition-colors">
                 {g.albums.length}
               </span>
             </button>
@@ -190,7 +190,7 @@ function LibraryTreeImpl({
                   const isLoading = loading.has(al.id);
                   return (
                     <div key={al.id}>
-                      <div className="group flex items-center gap-1.5 px-1 py-1 rounded hover:bg-surface/50">
+                      <div className="group flex items-center gap-1.5 py-0.5">
                         <button
                           onClick={() => toggleAlbum(al.id)}
                           className="flex items-center gap-1.5 min-w-0 flex-1 text-left"
@@ -206,11 +206,11 @@ function LibraryTreeImpl({
                               className="text-muted shrink-0"
                             />
                           )}
-                          <span className="truncate min-w-0 rounded-full px-2 py-0.5 bg-digital/15 text-digital">
+                          <span className="flex-1 truncate min-w-0 px-2 py-0.5 bg-digital/10 group-hover:bg-digital/25 text-digital transition-colors">
                             {al.album}
                           </span>
                           {al.year != null && (
-                            <span className="text-[11px] text-muted shrink-0">
+                            <span className="shrink-0 px-1.5 py-0.5 bg-surface/60 text-muted text-[11px] tabular-nums">
                               {al.year}
                             </span>
                           )}
@@ -232,7 +232,7 @@ function LibraryTreeImpl({
                         >
                           <Plus size={13} />
                         </button>
-                        <span className="text-[11px] text-muted tabular-nums shrink-0 w-5 text-right">
+                        <span className="shrink-0 min-w-[2.25rem] px-2 py-0.5 bg-digital/10 group-hover:bg-digital/25 text-digital/80 text-[11px] tabular-nums text-center transition-colors">
                           {al.trackCount}
                         </span>
                       </div>
@@ -255,7 +255,7 @@ function LibraryTreeImpl({
                               <div
                                 key={t.id}
                                 className={cn(
-                                  "group flex items-center gap-2 px-2 py-1 rounded hover:bg-surface/50",
+                                  "group flex items-center gap-2 px-2 py-1 hover:bg-surface/50",
                                   active && "bg-surface/70",
                                 )}
                                 title={
@@ -295,7 +295,7 @@ function LibraryTreeImpl({
                                   </span>
                                 </button>
                                 {unplayable && (
-                                  <span className="shrink-0 text-[9px] font-medium tracking-wide text-auburn border border-auburn/40 rounded px-1 leading-tight">
+                                  <span className="shrink-0 text-[9px] font-medium tracking-wide text-auburn border border-auburn/40 px-1 leading-tight">
                                     {t.codec ?? "?"}
                                   </span>
                                 )}

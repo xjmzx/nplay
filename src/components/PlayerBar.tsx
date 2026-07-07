@@ -85,19 +85,19 @@ export function PlayerBar({
             onPointerMove={onPointerMove}
             onPointerUp={onPointerUp}
             className={cn(
-              "group/seek flex-1 h-1.5 rounded-full bg-surface/60 relative min-w-0 touch-none",
+              "group/seek flex-1 h-1.5 bg-surface/60 relative min-w-0 touch-none",
               seekable ? "cursor-pointer" : "cursor-default",
             )}
             title="Click or drag to seek"
           >
             <div
-              className="h-full rounded-full bg-accent"
+              className="h-full bg-accent"
               style={{ width: `${pct}%` }}
             />
             {seekable && (
               <div
                 className={cn(
-                  "absolute top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-accent shadow transition-opacity",
+                  "absolute top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 bg-accent shadow transition-opacity",
                   scrub !== null
                     ? "opacity-100"
                     : "opacity-0 group-hover/seek:opacity-100",
@@ -121,9 +121,9 @@ export function PlayerBar({
             className={cn(
               "w-24 cursor-pointer shrink-0 appearance-none bg-transparent",
               // visible track
-              "[&::-webkit-slider-runnable-track]:h-1.5 [&::-webkit-slider-runnable-track]:rounded-full [&::-webkit-slider-runnable-track]:bg-surfaceHover",
+              "[&::-webkit-slider-runnable-track]:h-1.5 [&::-webkit-slider-runnable-track]:bg-surfaceHover",
               // accent thumb, centered on the thin track
-              "[&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-accent [&::-webkit-slider-thumb]:-mt-[3px]",
+              "[&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:bg-accent [&::-webkit-slider-thumb]:-mt-[3px]",
             )}
           />
         </div>
