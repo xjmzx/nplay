@@ -5,6 +5,29 @@ siblings (ndisc / ndisc.view / glmps), nplay is a local player and **not** a
 participant in the ndisc Nostr wire contract, so it tracks a single axis: this
 app's own semver, below.
 
+## 0.1.0-beta.3 — 2026-07-07
+
+### BPM readout
+- The now-playing meta line shows the track's **BPM**, detected via
+  `aubio tempo` off the UI thread and **cached in the library DB** (whole
+  number) so replays are instant. Degrades silently when aubio isn't present;
+  the Linux bundle now depends on **aubio-tools**.
+
+### Now-playing / Collection polish
+- **Drag a release (or track) from the Collection onto the Playlist** to
+  append it — the panel highlights while a drag is over it. (Internal
+  row-reorder is unaffected.)
+- Fixed the Spectrum vanishing for **audio** tracks — the widened stage let
+  the square cover art squeeze the visualiser to zero height (video's 16:9
+  art didn't, which is why only video kept its idle loop). Cover art is now
+  size-capped; the Spectrum header no longer collapses the whole stage.
+- Brighter release info; the release **year** now matches the title's blue;
+  row action buttons (play / add / reveal / remove) sit at a dim, always-
+  visible default instead of appearing only on hover.
+- Video sits on the grey panel tone (centred, height-capped), so a
+  sub-desktop-resolution or non-16:9 clip fills the letterbox with the
+  surface colour rather than hard black.
+
 ## 0.1.0-beta.2 — 2026-07-07
 
 ### Square UI + Collection rework — 2026-07-07
