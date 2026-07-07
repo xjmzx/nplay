@@ -41,7 +41,7 @@
     ],
     "linux": {
       "deb": {
-        "depends": ["gstreamer1.0-libav", "ffmpeg"]
+        "depends": ["gstreamer1.0-libav", "ffmpeg", "aubio-tools"]
       }
     }
   }
