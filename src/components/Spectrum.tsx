@@ -9,8 +9,18 @@ import { audioSpectrum } from "../lib/tauri";
  *
  * The bar colour is taken from the canvas's own computed `color` (set via the
  * `text-accent` class) so it tracks the suite palette.
+ *
+ * `synthetic` swaps the real FFT poll for a gentle looping pattern — used when
+ * an mp4 video is playing (its audio is decoded by the webview, never touches
+ * rodio, so there are no real magnitudes to read). Keeps the panel alive.
  */
-export function Spectrum({ active }: { active: boolean }) {
+export function Spectrum({
+  active,
+  synthetic = false,
+}: {
+  active: boolean;
+  synthetic?: boolean;
+}) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
@@ -124,13 +134,33 @@ export function Spectrum({ active }: { active: boolean }) {
       }
     };
 
+    // A subtle, seamless looping EQ pattern for the no-audio-analysis case:
+    // two slow counter-travelling sine waves folded into the 28 bands, kept
+    // low (~0.10–0.30) so it reads as an idle shimmer, not live signal.
+    const BARS = 28;
+    const synth = (t: number): number[] => {
+      const s = t / 1000;
+      const out = new Array(BARS);
+      for (let i = 0; i < BARS; i++) {
+        const x = i / (BARS - 1);
+        const a = 0.5 + 0.5 * Math.sin(s * 0.9 + x * Math.PI * 2);
+        const b = 0.5 + 0.5 * Math.sin(s * 0.6 - x * Math.PI * 3 + 1.3);
+        out[i] = 0.1 + 0.2 * (a * 0.6 + b * 0.4);
+      }
+      return out;
+    };
+
     const tick = (t: number) => {
       if (stopped) return;
       if (t - last >= 33) {
         last = t;
-        audioSpectrum()
-          .then(draw)
-          .catch(() => {});
+        if (synthetic) {
+          draw(synth(t));
+        } else {
+          audioSpectrum()
+            .then(draw)
+            .catch(() => {});
+        }
       }
       raf = requestAnimationFrame(tick);
     };
@@ -140,7 +170,7 @@ export function Spectrum({ active }: { active: boolean }) {
       stopped = true;
       cancelAnimationFrame(raf);
     };
-  }, [active]);
+  }, [active, synthetic]);
 
   return <canvas ref={canvasRef} className="w-full h-full text-accent" />;
 }

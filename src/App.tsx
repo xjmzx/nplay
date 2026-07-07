@@ -33,7 +33,6 @@ import { Playlist, type PlaylistSortKey } from "./components/Playlist";
 import { ScanProgressBar } from "./components/ScanProgressBar";
 import { Spectrum } from "./components/Spectrum";
 import { TableView } from "./components/TableView";
-import { Video } from "./components/Video";
 import {
   audioPause,
   audioPlay,
@@ -175,7 +174,6 @@ export default function App() {
   const [colCollapsed, setColCollapsed] = usePersistedBool("nplay.col.collapsed");
   const [plCollapsed, setPlCollapsed] = usePersistedBool("nplay.playlist.collapsed");
   const [npCollapsed, setNpCollapsed] = usePersistedBool("nplay.nowplaying.collapsed");
-  const [vidCollapsed, setVidCollapsed] = usePersistedBool("nplay.video.collapsed");
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -261,8 +259,8 @@ export default function App() {
   // that genuinely can't be decoded flags `error` in the status poll and is
   // skipped to the next track. Latest next handler held in a ref so the poll
   // never closes over stale queue/index state.
-  // The webview <video> element (mounted by the Video section for mp4 tracks);
-  // the app transport drives it directly for video, rodio for everything else.
+  // The webview <video> element (mounted in the Now-playing stage for mp4
+  // tracks); the app transport drives it directly for video, rodio otherwise.
   const videoElRef = useRef<HTMLVideoElement | null>(null);
 
   // Replay the current track from the top (Repeat One, and the wrap-to-self
@@ -654,10 +652,10 @@ export default function App() {
     setDuration(current.duration ?? 0);
     setIsPlaying(true);
     // mp4 → the <video> element owns playback (picture + sound); stop rodio,
-    // and make sure the Video panel is open so the element actually exists.
+    // and make sure the stage is open so the element actually exists.
     if (currentIsPlayableVideo) {
       audioStop().catch(() => {});
-      setVidCollapsed(false);
+      setNpCollapsed(false);
       if (videoElRef.current) videoElRef.current.volume = volume;
       return;
     }
@@ -715,13 +713,13 @@ export default function App() {
   // Header master-transport button — matches ndisc.smpl's MasterStrip
   // styling (h-8 square, surface fill, accent glyph) for suite consistency.
   const hdrBtn =
-    "h-8 w-8 rounded-md bg-surface text-accent hover:bg-accent/15 transition-colors " +
+    "h-8 w-8 bg-surface text-accent hover:bg-accent/15 transition-colors " +
     "flex items-center justify-center shrink-0 disabled:opacity-40 disabled:hover:bg-surface";
   // Mode-toggle variant: same footprint, but tinted when active and muted
   // when off (it's a state indicator, not a one-shot action).
   const modeBtn = (on: boolean) =>
     cn(
-      "h-8 w-8 rounded-md flex items-center justify-center shrink-0 transition-colors",
+      "h-8 w-8 flex items-center justify-center shrink-0 transition-colors",
       on
         ? "bg-accent/20 text-accent hover:bg-accent/25"
         : "bg-surface text-muted hover:text-fg/80 hover:bg-accent/10",
@@ -733,8 +731,7 @@ export default function App() {
   const mainCols = [
     colCollapsed ? "2.5rem" : "minmax(0, 1fr)",
     plCollapsed ? "2.5rem" : "minmax(0, 1fr)",
-    npCollapsed ? "2.5rem" : "300px",
-    vidCollapsed ? "2.5rem" : "minmax(0, 1fr)",
+    npCollapsed ? "2.5rem" : "minmax(300px, 0.8fr)",
   ].join(" ");
 
   const albumCount = albums.length;
@@ -750,7 +747,7 @@ export default function App() {
             <span className="text-mauve">play</span>
           </h1>
           {appVersion && (
-            <span className="hidden md:inline-flex items-center px-2 py-1 rounded-md bg-surface text-mauve font-mono text-[11px] shrink-0">
+            <span className="hidden md:inline-flex items-center px-2 py-1 bg-surface text-mauve font-mono text-[11px] shrink-0">
               v{appVersion}
             </span>
           )}
@@ -844,7 +841,7 @@ export default function App() {
             onClick={doScan}
             disabled={scanning}
             className={cn(
-              "flex items-center justify-center gap-1.5 min-w-[6.5rem] text-[12px] px-2.5 py-1 rounded-md transition-colors",
+              "flex items-center justify-center gap-1.5 min-w-[6.5rem] text-[12px] px-2.5 py-1 transition-colors",
               // Keep the rollover tint latched on while scanning (pressed look).
               scanning ? "bg-surfaceHover" : "bg-surface/70 hover:bg-surfaceHover",
             )}
@@ -891,7 +888,7 @@ export default function App() {
         </div>
       </header>
 
-      {/* Main — Collection · Playlist · (Now playing + Spectrum) · Video,
+      {/* Main — Collection · Playlist · Stage (art-or-video + Spectrum),
           or the flat sortable table view. */}
       {view === "table" ? (
         <div className="flex-1 min-h-0 p-4">
@@ -927,13 +924,13 @@ export default function App() {
           >
             {/* sort + filter controls */}
             <div className="flex items-center gap-2 shrink-0">
-              <div className="inline-flex rounded-md bg-surface/60 p-0.5 text-[11px] shrink-0">
+              <div className="inline-flex bg-surface/60 p-0.5 text-[11px] shrink-0">
                 {(["artist", "album", "year"] as SortKey[]).map((k) => (
                   <button
                     key={k}
                     onClick={() => setSort(k)}
                     className={cn(
-                      "px-2 py-0.5 rounded capitalize transition-colors",
+                      "px-2 py-0.5 capitalize transition-colors",
                       sort === k
                         ? "bg-accent/20 text-accent"
                         : "text-muted hover:text-fg/80",
@@ -948,7 +945,7 @@ export default function App() {
                 title="Show only albums with video"
                 aria-pressed={videoOnly}
                 className={cn(
-                  "flex items-center gap-1 px-2 py-1 rounded-md text-[11px] shrink-0 transition-colors",
+                  "flex items-center gap-1 px-2 py-1 text-[11px] shrink-0 transition-colors",
                   videoOnly
                     ? "bg-accent/20 text-accent"
                     : "bg-surface/60 text-muted hover:text-fg/80",
@@ -965,7 +962,7 @@ export default function App() {
                   value={filter}
                   onChange={(e) => setFilter(e.target.value)}
                   placeholder="Filter…"
-                  className="w-full pl-7 pr-2 py-1 rounded-md bg-surface/60 text-[12px] placeholder:text-muted/60 focus:outline-none focus:ring-1 focus:ring-accent/40"
+                  className="w-full pl-7 pr-2 py-1 bg-surface/60 text-[12px] placeholder:text-muted/60 focus:outline-none focus:ring-1 focus:ring-accent/40"
                 />
               </div>
             </div>
@@ -1023,7 +1020,7 @@ export default function App() {
           </Section>
         )}
 
-        {/* Now playing + spectrum */}
+        {/* Stage — album art or the live video, then the spectrum beneath. */}
         {npCollapsed ? (
           <CollapsedStrip
             title="Now playing"
@@ -1034,10 +1031,17 @@ export default function App() {
           <div className="flex flex-col gap-3 min-h-0 min-w-0">
             <Section
               title="Now playing"
-              icon={<Music size={15} />}
+              icon={currentIsPlayableVideo ? <Film size={15} /> : <Music size={15} />}
               onTitleClick={() => setNpCollapsed(true)}
             >
-              <NowPlaying track={current} album={currentAlbum} />
+              <NowPlaying
+                track={current}
+                album={currentAlbum}
+                isPlayableVideo={currentIsPlayableVideo}
+                mediaBase={mediaBaseUrl}
+                volume={volume}
+                elRef={videoElRef}
+              />
             </Section>
             <Section
               title="Spectrum"
@@ -1049,35 +1053,10 @@ export default function App() {
               <div className="flex-1 min-h-0">
                 {/* Only animate while actually playing — gating on a loaded
                     track alone polled at 30fps even while paused. */}
-                <Spectrum active={isPlaying} />
+                <Spectrum active={isPlaying} synthetic={currentIsPlayableVideo} />
               </div>
             </Section>
           </div>
-        )}
-
-        {/* Video (scaffold — placeholder picture surface, last section) */}
-        {vidCollapsed ? (
-          <CollapsedStrip
-            title="Video"
-            icon={<Film size={15} />}
-            onExpand={() => setVidCollapsed(false)}
-          />
-        ) : (
-          <Section
-            title="Video"
-            icon={<Film size={15} />}
-            elastic
-            className="min-w-0"
-            onTitleClick={() => setVidCollapsed(true)}
-          >
-            <Video
-              track={current}
-              album={currentAlbum}
-              mediaBase={mediaBaseUrl}
-              volume={volume}
-              elRef={videoElRef}
-            />
-          </Section>
         )}
       </div>
       )}
