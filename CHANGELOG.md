@@ -5,7 +5,44 @@ siblings (ndisc / ndisc.view / glmps), nplay is a local player and **not** a
 participant in the ndisc Nostr wire contract, so it tracks a single axis: this
 app's own semver, below.
 
-## 0.1.0-beta.2 — unreleased
+## 0.1.0-beta.2 — 2026-07-07
+
+### Square UI + Collection rework — 2026-07-07
+- **90° corners everywhere but the Section panels.** Suite style pass: the
+  Collection artist/release pills become square highlights that fill the row
+  and put the release/track counts in their own matching, fixed-width boxes
+  (so 1- and 2-digit counts stay aligned). Track rows, codec badges, the
+  playlist toolbar, table inputs, the transport progress bar + volume knob,
+  the version chip and the Current-feed topic pills are all squared too.
+  Default box tint dropped a touch (/15 → /10), hover brightens to /25.
+
+### Unified media stage — 2026-07-07
+- **Now Playing + Video are one stage.** The media square shows album art for
+  audio and swaps to the live `<video>` for a picture-playable mp4/m4v (hover
+  fullscreen button), so there's no dead art panel during video nor an empty
+  video panel during audio. The separate Video column is retired — layout is
+  now Collection · Playlist · Stage. Non-mp4 video stays audio-only with a note.
+- **Spectrum idle loop.** While an mp4 video plays (its audio is decoded by the
+  webview, never touching rodio), the spectrum shows a subtle looping pattern
+  instead of sitting flat; audio and non-mp4 video keep the real FFT.
+
+### Playlist — 2026-07-01
+- **Cleanup quick wins**: remove-unavailable, remove-duplicates, and
+  show-in-file-browser (per row).
+- **Sort + drag-reorder**: one-shot sort by artist/album/title/duration and
+  HTML5 drag-reorder; clearing keeps the current track playing.
+
+### Status footer + seek — 2026-07-01
+- Thin suite-standard status footer (stack · db path) below the transport, and
+  the progress bar is now **drag-scrubbable** (commits the seek on release).
+
+### Current feed view — 2026-06-30
+- A read-only **`current`** view consuming the suite's Nostr feed (kind 31239),
+  reached from a header Player · Table · Current view cluster. No keys, no
+  publishing — consumer only.
+
+### Video — 2026-06-30
+- **.m4v plays with picture** (not audio-only) over the loopback media server.
 
 ### Keyboard — 2026-06-30
 - **Spacebar toggles play/pause** app-wide — ignored while typing in a field
