@@ -1034,6 +1034,7 @@ export default function App() {
                 onRemoveDuplicates={removeDuplicatesFromPlaylist}
                 onReorder={reorderPlaylist}
                 onSort={sortPlaylist}
+                onAdd={addToPlaylist}
               />
             </div>
           </Section>

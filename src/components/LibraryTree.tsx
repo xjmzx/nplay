@@ -8,6 +8,7 @@ import {
   Plus,
 } from "lucide-react";
 import { cn } from "../lib/cn";
+import { COLLECTION_DND } from "../lib/dnd";
 import { formatTime } from "../lib/format";
 import { listAlbumTracks, type Album, type Track } from "../lib/tauri";
 
@@ -190,7 +191,18 @@ function LibraryTreeImpl({
                   const isLoading = loading.has(al.id);
                   return (
                     <div key={al.id}>
-                      <div className="group flex items-center gap-1.5 py-0.5">
+                      <div
+                        className="group flex items-center gap-1.5 py-0.5"
+                        draggable
+                        onDragStart={(e) => {
+                          e.dataTransfer.setData(
+                            COLLECTION_DND,
+                            JSON.stringify({ kind: "album", albumId: al.id }),
+                          );
+                          e.dataTransfer.setData("text/plain", al.album);
+                          e.dataTransfer.effectAllowed = "copy";
+                        }}
+                      >
                         <button
                           onClick={() => toggleAlbum(al.id)}
                           className="flex items-center gap-1.5 min-w-0 flex-1 text-left"
@@ -254,6 +266,15 @@ function LibraryTreeImpl({
                             return (
                               <div
                                 key={t.id}
+                                draggable
+                                onDragStart={(e) => {
+                                  e.dataTransfer.setData(
+                                    COLLECTION_DND,
+                                    JSON.stringify({ kind: "track", track: t }),
+                                  );
+                                  e.dataTransfer.setData("text/plain", t.title);
+                                  e.dataTransfer.effectAllowed = "copy";
+                                }}
                                 className={cn(
                                   "group flex items-center gap-2 px-2 py-1 hover:bg-surface/50",
                                   active && "bg-surface/70",

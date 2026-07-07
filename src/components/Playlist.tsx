@@ -12,8 +12,14 @@ import {
   X,
 } from "lucide-react";
 import { cn } from "../lib/cn";
+import { COLLECTION_DND, type CollectionDrag } from "../lib/dnd";
 import { formatTime } from "../lib/format";
-import { revealInFileManager, type Album, type Track } from "../lib/tauri";
+import {
+  listAlbumTracks,
+  revealInFileManager,
+  type Album,
+  type Track,
+} from "../lib/tauri";
 
 /** One-shot sort keys for the playlist (applied as a reorder, not a mode). */
 export type PlaylistSortKey = "title" | "artist" | "album" | "duration";
@@ -45,6 +51,8 @@ interface PlaylistProps {
   onReorder: (from: number, to: number) => void;
   /** Sort the whole list by a key (one-shot reorder). */
   onSort: (key: PlaylistSortKey) => void;
+  /** Append tracks dropped in from the Collection (release or single track). */
+  onAdd: (tracks: Track[]) => void;
 }
 
 // Memoized so the app's 250ms position tick doesn't reconcile the list (its
@@ -64,6 +72,7 @@ function PlaylistImpl({
   onRemoveDuplicates,
   onReorder,
   onSort,
+  onAdd,
 }: PlaylistProps) {
   const hasUnavailable = tracks.some((t) => t.playable === false);
   const seenPaths = new Set<string>();
@@ -73,8 +82,50 @@ function PlaylistImpl({
   const [sortOpen, setSortOpen] = useState(false);
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [overIndex, setOverIndex] = useState<number | null>(null);
+  // Highlight while a Collection item is dragged over the panel.
+  const [dropActive, setDropActive] = useState(false);
+
+  function onCollectionDrop(e: React.DragEvent) {
+    if (!e.dataTransfer.types.includes(COLLECTION_DND)) return;
+    e.preventDefault();
+    setDropActive(false);
+    try {
+      const data = JSON.parse(
+        e.dataTransfer.getData(COLLECTION_DND),
+      ) as CollectionDrag;
+      if (data.kind === "album") {
+        listAlbumTracks(data.albumId)
+          .then((rows) => rows.length && onAdd(rows))
+          .catch(() => {});
+      } else if (data.kind === "track") {
+        onAdd([data.track]);
+      }
+    } catch {
+      /* malformed payload — ignore */
+    }
+  }
+
   return (
-    <div className="flex flex-col gap-1">
+    <div
+      className={cn(
+        "flex flex-col gap-1 min-h-full",
+        dropActive && "ring-1 ring-inset ring-accent/60 bg-accent/5",
+      )}
+      onDragOver={(e) => {
+        // Only external Collection drags — internal row reorder is handled on
+        // the rows themselves (it carries no dataTransfer payload).
+        if (!e.dataTransfer.types.includes(COLLECTION_DND)) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "copy";
+        if (!dropActive) setDropActive(true);
+      }}
+      onDragLeave={(e) => {
+        // Ignore moves between children; only clear on leaving the panel.
+        if (e.currentTarget.contains(e.relatedTarget as Node | null)) return;
+        setDropActive(false);
+      }}
+      onDrop={onCollectionDrop}
+    >
       {/* Sticky toolbar */}
       <div className="sticky top-0 z-10 -mt-1 pt-1 bg-panel/95 flex items-center gap-2">
         <button
@@ -169,8 +220,8 @@ function PlaylistImpl({
 
       {!tracks.length ? (
         <div className="text-[13px] text-muted px-1 py-2">
-          Empty. Add tracks from the Collection with the{" "}
-          <span className="text-fg/70">+</span> button.
+          Empty. Drag a release here, or add tracks from the Collection with
+          the <span className="text-fg/70">+</span> button.
         </div>
       ) : (
         <div className="flex flex-col gap-0.5">
