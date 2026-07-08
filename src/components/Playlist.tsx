@@ -9,6 +9,7 @@ import {
   Play,
   Save,
   Trash2,
+  Unlink,
   X,
 } from "lucide-react";
 import { cn } from "../lib/cn";
@@ -43,7 +44,8 @@ interface PlaylistProps {
   onLoad: () => void;
   /** Export the playlist as an .xspf. */
   onSave: () => void;
-  /** Drop tracks whose format can't be decoded. */
+  /** Drop tracks that can't play from the library — undecodable format or
+   *  no longer in the collection (file moved/removed). */
   onRemoveUnavailable: () => void;
   /** Collapse duplicate paths, keeping the first occurrence. */
   onRemoveDuplicates: () => void;
@@ -74,7 +76,9 @@ function PlaylistImpl({
   onSort,
   onAdd,
 }: PlaylistProps) {
-  const hasUnavailable = tracks.some((t) => t.playable === false);
+  // Unavailable = undecodable format OR no longer in the collection (an
+  // unresolved entry carries a synthesized negative id — file moved/removed).
+  const hasUnavailable = tracks.some((t) => t.playable === false || t.id < 0);
   const seenPaths = new Set<string>();
   const hasDuplicates = tracks.some((t) =>
     seenPaths.has(t.path) ? true : (seenPaths.add(t.path), false),
@@ -192,7 +196,7 @@ function PlaylistImpl({
         <button
           onClick={onRemoveUnavailable}
           disabled={!hasUnavailable}
-          title="Remove unavailable tracks"
+          title="Remove unavailable tracks (undecodable format or missing from library)"
           className="text-muted hover:text-alert disabled:opacity-40 transition-colors"
         >
           <Ban size={14} />
@@ -229,6 +233,10 @@ function PlaylistImpl({
             const active = t.id === currentTrackId;
             const artist = albumById.get(t.albumId)?.artist ?? "";
             const unplayable = t.playable === false;
+            // No longer in the collection: resolveEntries fell back to a
+            // synthesized track (negative id) because its path wasn't in the
+            // rebuilt index — the file was moved or removed since last scan.
+            const missing = t.id < 0;
             return (
               <div
                 key={`${t.id}-${i}`}
@@ -263,9 +271,11 @@ function PlaylistImpl({
                     "ring-1 ring-inset ring-accent/60 bg-accent/10",
                 )}
                 title={
-                  unplayable
-                    ? `${t.codec ?? "This format"} can't be decoded — will be skipped`
-                    : undefined
+                  missing
+                    ? "Not in your library — moved or removed since the last scan. Use the broom to clear."
+                    : unplayable
+                      ? `${t.codec ?? "This format"} can't be decoded — will be skipped`
+                      : undefined
                 }
               >
                 <GripVertical
@@ -284,11 +294,13 @@ function PlaylistImpl({
                   <span className="truncate min-w-0">
                     <span
                       className={cn(
-                        unplayable
-                          ? "text-muted/50 line-through decoration-muted/30"
-                          : active
-                            ? "text-accent"
-                            : "text-fg/80",
+                        missing
+                          ? "text-muted/40 italic"
+                          : unplayable
+                            ? "text-muted/50 line-through decoration-muted/30"
+                            : active
+                              ? "text-accent"
+                              : "text-fg/80",
                       )}
                     >
                       {t.title}
@@ -296,6 +308,14 @@ function PlaylistImpl({
                     {artist && <span className="text-muted"> · {artist}</span>}
                   </span>
                 </div>
+                {missing && (
+                  <span
+                    className="shrink-0 inline-flex items-center gap-1 text-[9px] font-medium tracking-wide text-auburn border border-auburn/40 px-1 leading-tight"
+                    aria-label="Missing from library"
+                  >
+                    <Unlink size={9} /> missing
+                  </span>
+                )}
                 {unplayable && (
                   <span className="shrink-0 text-[9px] font-medium tracking-wide text-auburn border border-auburn/40 px-1 leading-tight">
                     {t.codec ?? "?"}

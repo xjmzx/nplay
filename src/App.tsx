@@ -184,8 +184,14 @@ export default function App() {
     return isFinite(v) ? Math.min(1, Math.max(0, v)) : 1;
   });
 
-  const current =
-    index >= 0 && index < playlist.length ? playlist[index] : null;
+  // The authoritative now-playing track — a first-class state, deliberately
+  // NOT derived from playlist[index]. Playback is decoupled from the queue so
+  // that replacing the queue (opening a saved playlist), pruning it, or a
+  // library rescan never interrupts the current track: it plays to the end
+  // unless the user intervenes (audio and video alike). The playlist + `index`
+  // are the up-next cursor that prev/next/auto-advance walk once it ends.
+  const [nowPlaying, setNowPlaying] = useState<Track | null>(null);
+  const current = nowPlaying;
   // Picture-playable video = an mp4/m4v container (h264/aac/ac3 all play via
   // WebKit2GTK+libav over the loopback server); these route to the <video>
   // element. Other containers (mkv/avi/mpg/…) stay rodio audio-only until a
@@ -252,6 +258,26 @@ export default function App() {
     try {
       await scanLibrary();
       await refreshAlbums();
+      // Re-resolve the queue against the rebuilt index: entries whose files
+      // vanished fall back to synthesized tracks (negative id → shown muted +
+      // swept by the broom), and any that reappeared re-link to real tracks.
+      // Order/length are preserved, so the play position stays valid.
+      if (playlist.length) {
+        const reresolved = await resolveEntries(
+          playlist.map((t) => ({
+            path: t.path,
+            title: t.title,
+            duration: t.duration,
+          })),
+        );
+        setPlaylist(reresolved);
+        // Keep the up-next cursor on the playing track across the rebuild
+        // (matched by path — ids may be reassigned). nowPlaying is left as-is
+        // so the current track is never interrupted by a scan.
+        if (nowPlaying) {
+          setIndex(reresolved.findIndex((t) => t.path === nowPlaying.path));
+        }
+      }
       // The scan can finish in a second or two; hold a full "done" bar briefly
       // so the user actually sees it complete instead of a flicker.
       setProgress({ phase: "done", done: 1, total: 1, path: "" });
@@ -345,10 +371,12 @@ export default function App() {
     if (next === null) {
       setIsPlaying(false);
       audioStop().catch(() => {});
-    } else if (next === index) {
+    } else if (nowPlaying && playlist[next]?.id === nowPlaying.id) {
+      // Wrapping to the same track (repeat-all over a single entry).
       restartCurrent();
     } else {
       setIndex(next);
+      setNowPlaying(playlist[next]);
     }
   };
 
@@ -360,8 +388,10 @@ export default function App() {
   // defeat the memo and re-render those panels on every position tick.
   const play = useCallback((tracks: Track[], startIndex: number) => {
     if (!tracks.length) return;
+    const i = Math.max(0, Math.min(startIndex, tracks.length - 1));
     setPlaylist(tracks);
-    setIndex(Math.max(0, Math.min(startIndex, tracks.length - 1)));
+    setIndex(i);
+    setNowPlaying(tracks[i]);
   }, []);
 
   // --- playlist (the live play queue) --------------------------------------
@@ -370,25 +400,30 @@ export default function App() {
   }, []);
   const playPlaylistAt = useCallback(
     (i: number) => {
-      if (playlist.length)
-        setIndex(Math.max(0, Math.min(i, playlist.length - 1)));
+      if (!playlist.length) return;
+      const clamped = Math.max(0, Math.min(i, playlist.length - 1));
+      setIndex(clamped);
+      setNowPlaying(playlist[clamped]);
     },
-    [playlist.length],
+    [playlist],
   );
-  const removeFromPlaylist = useCallback((i: number) => {
-    setPlaylist((p) => p.filter((_, j) => j !== i));
-    // Keep the highlight on the same track: a removal before it shifts it
-    // down by one; removing it or a later one leaves the index (a removed
-    // current lets the next track slide into the slot).
-    setIndex((idx) => (i < idx ? idx - 1 : idx));
-  }, []);
+  const removeFromPlaylist = useCallback(
+    (i: number) => {
+      const next = playlist.filter((_, j) => j !== i);
+      setPlaylist(next);
+      // The cursor follows the playing track to its new slot (or detaches to
+      // -1 if its row was the one removed) — playback itself is untouched.
+      setIndex(nowPlaying ? next.findIndex((t) => t.id === nowPlaying.id) : -1);
+    },
+    [playlist, nowPlaying],
+  );
   const clearPlaylist = useCallback(() => {
-    // Don't interrupt playback: if a track is playing, keep it as the sole
-    // remaining entry (its `id` is unchanged, so the [current?.id] playback
-    // effect doesn't re-fire). Only fully empty + stop when nothing plays.
-    const cur = index >= 0 && index < playlist.length ? playlist[index] : null;
-    if (cur) {
-      setPlaylist([cur]);
+    // Playback is independent of the queue: Clear empties the up-next list but
+    // never interrupts the current track. Keep the playing track as the sole
+    // remaining row (it still shows + anchors prev/next); fully empty + stop
+    // only when nothing is playing.
+    if (nowPlaying) {
+      setPlaylist([nowPlaying]);
       setIndex(0);
       if (shuffle) setOrder(makeShuffleOrder(1, 0));
       return;
@@ -397,23 +432,26 @@ export default function App() {
     setIndex(-1);
     audioStop().catch(() => {});
     if (videoElRef.current) videoElRef.current.pause();
-  }, [playlist, index, shuffle]);
+  }, [nowPlaying, shuffle]);
 
   // Bulk-prune the playlist by a keep-predicate, re-pointing `index` at the
   // track that was playing (the shuffle `order` self-heals via the
   // [shuffle, playlist.length] effect). Backs the toolbar cleanup actions.
   const prunePlaylist = useCallback(
     (keep: (t: Track) => boolean) => {
-      const cur = index >= 0 && index < playlist.length ? playlist[index] : null;
       const kept = playlist.filter(keep);
       setPlaylist(kept);
-      const ni = cur ? kept.indexOf(cur) : -1;
-      setIndex(ni >= 0 ? ni : Math.min(index, kept.length - 1));
+      // Re-point the cursor at the playing track's new slot (-1 if it was
+      // itself pruned); playback continues regardless.
+      setIndex(nowPlaying ? kept.findIndex((t) => t.id === nowPlaying.id) : -1);
     },
-    [playlist, index],
+    [playlist, nowPlaying],
   );
+  // "Unavailable" = can't contribute real playback from the library: either an
+  // undecodable format (playable === false) or an entry that no longer matches
+  // the collection (synthesized fallback → negative id; file moved/removed).
   const removeUnavailableFromPlaylist = useCallback(
-    () => prunePlaylist((t) => t.playable !== false),
+    () => prunePlaylist((t) => t.playable !== false && t.id >= 0),
     [prunePlaylist],
   );
   const removeDuplicatesFromPlaylist = useCallback(() => {
@@ -431,14 +469,14 @@ export default function App() {
   // same-length reorder must regenerate `order` here).
   const applyReorder = useCallback(
     (next: Track[]) => {
-      const cur = index >= 0 && index < playlist.length ? playlist[index] : null;
       setPlaylist(next);
-      const ni = cur ? next.indexOf(cur) : -1;
-      const nidx = ni >= 0 ? ni : index;
+      const nidx = nowPlaying
+        ? next.findIndex((t) => t.id === nowPlaying.id)
+        : -1;
       setIndex(nidx);
       if (shuffle) setOrder(makeShuffleOrder(next.length, nidx));
     },
-    [playlist, index, shuffle],
+    [nowPlaying, shuffle],
   );
   const reorderPlaylist = useCallback(
     (from: number, to: number) => {
@@ -546,6 +584,12 @@ export default function App() {
     try {
       const items = parseXspf(await readTextFile(picked));
       setPlaylist(await resolveEntries(items));
+      // Opening a playlist replaces the up-next queue but must NOT interrupt
+      // what's playing (audio or video). Detach the cursor (index → -1) and
+      // leave nowPlaying untouched, so the current track plays to its end; when
+      // it finishes, auto-advance rolls into this freshly-opened list from the
+      // top. (If nothing is playing, the first Play/Next starts it there.)
+      setIndex(-1);
     } catch (e) {
       console.error("playlist load failed", e);
     }
@@ -636,7 +680,11 @@ export default function App() {
     else if (pos > 0) p = seq[pos - 1];
     else if (repeat === "all") p = seq[seq.length - 1];
     if (p === null) restart();
-    else setIndex(p);
+    else if (nowPlaying && playlist[p]?.id === nowPlaying.id) restart();
+    else {
+      setIndex(p);
+      setNowPlaying(playlist[p]);
+    }
   }
 
   function seek(t: number) {
@@ -725,9 +773,11 @@ export default function App() {
 
   // Next is meaningful unless we're on the last track with no wrap (sequential,
   // repeat off); shuffle/repeat-all always have somewhere to go.
+  // A detached cursor (index < 0, e.g. right after opening a playlist while a
+  // track plays) still has somewhere to go — Next rolls into the queue's top.
   const canNext =
-    index >= 0 &&
-    (repeat === "all" || shuffle || index < playlist.length - 1);
+    playlist.length > 0 &&
+    (index < 0 || repeat === "all" || shuffle || index < playlist.length - 1);
 
   // Header master-transport button — matches ndisc.smpl's MasterStrip
   // styling (h-8 square, surface fill, accent glyph) for suite consistency.
