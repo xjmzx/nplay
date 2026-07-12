@@ -35,6 +35,12 @@ export interface Track {
 export interface LibraryStats {
   tracks: number;
   unplayable: number;
+  /** Of those, how many are NOT yet acknowledged. Acknowledging silences the
+   *  warning, so this is what the header nags about — the total stays available
+   *  so the fact itself isn't lost. */
+  unplayableUnacked: number;
+  /** When the index was last rebuilt (unix seconds), or null if never. */
+  lastScannedAt: number | null;
 }
 
 /** A track joined with its album — one flat row for the sortable table view. */
@@ -86,6 +92,47 @@ export function tracksByPaths(paths: string[]): Promise<Track[]> {
 /** Headline library counts (total tracks + how many can't be decoded). */
 export function libraryStats(): Promise<LibraryStats> {
   return invoke("library_stats");
+}
+
+/** A file nplay cannot fully play. Both kinds are fixable, not disposable —
+ *  see the Rust side. `undecodable_audio` = APE/WavPack/TAK/WMA (no decoder,
+ *  the file is fine); `pictureless_video` = not mp4/m4v, so it plays audio-only. */
+export interface ProblemFile {
+  path: string;
+  kind: "undecodable_audio" | "pictureless_video";
+  codec: string;
+  artist: string;
+  album: string;
+  title: string;
+  acknowledged: boolean;
+}
+
+export interface LibraryHealth {
+  lastScannedAt: number | null;
+  indexedTracks: number;
+  /** Media files on disk under the music root, right now. */
+  onDisk: number;
+  /** Indexed, but the file is gone from disk. */
+  stale: string[];
+  /** On disk, but not indexed — a rescan picks these up. */
+  unindexed: string[];
+  problems: ProblemFile[];
+}
+
+/** Walk the music root, diff it against the index, and list what can't be
+ *  played. Read-only — touches nothing on disk, changes nothing in the DB. */
+export function libraryHealth(): Promise<LibraryHealth> {
+  return invoke("library_health");
+}
+
+/** Mark problem files seen-and-accepted (or un-mark). A note to self: it changes
+ *  nothing about playback and nothing on disk. Keyed by path, so it survives the
+ *  wipe-and-rebuild a scan does. */
+export function acknowledgeFiles(
+  paths: string[],
+  acknowledged: boolean,
+): Promise<void> {
+  return invoke("acknowledge_files", { paths, acknowledged });
 }
 
 /** Every track in the library, flat (joined with album), for the table view. */

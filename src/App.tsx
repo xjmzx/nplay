@@ -31,6 +31,7 @@ import { NowPlaying } from "./components/NowPlaying";
 import { PlayerBar } from "./components/PlayerBar";
 import { Playlist, type PlaylistSortKey } from "./components/Playlist";
 import { ScanProgressBar } from "./components/ScanProgressBar";
+import { Health, fmtAgo } from "./components/Health";
 import { Spectrum } from "./components/Spectrum";
 import { TableView } from "./components/TableView";
 import {
@@ -151,6 +152,8 @@ export default function App() {
   const [loadingAlbums, setLoadingAlbums] = useState(true);
   const [scanning, setScanning] = useState(false);
   const [progress, setProgress] = useState<ScanProgress | null>(null);
+  const [healthOpen, setHealthOpen] = useState(false);
+  const lastScannedAt = stats?.lastScannedAt ?? null;
 
   // The playlist IS the play queue: `index` points at the track playing
   // within it. Building a list (add / load) and playing it are the same list,
@@ -893,19 +896,37 @@ export default function App() {
         <div className="flex items-center gap-3 shrink-0 justify-self-end">
           {/* Permanent scan meter — muted track at rest, accent fill on scan. */}
           <ScanProgressBar progress={progress} active={scanning} />
-          <span className="text-[12px] text-muted whitespace-nowrap">
+          {/* The library summary is the way in to Library health — the counts
+              are the symptom, the dialog is the explanation. */}
+          <button
+            onClick={() => setHealthOpen(true)}
+            title="Library health — index vs disk, and what can't be played"
+            className="text-[12px] text-muted whitespace-nowrap hover:text-fg
+                       transition-colors"
+          >
             {albumCount} albums
             {stats ? ` · ${stats.tracks} tracks` : ""}
+            {/* Auburn only while something is UNacknowledged. Acknowledging is
+                the user saying "I know, I'm living with it" — the count stays
+                (the fact hasn't gone away) but it stops shouting. */}
             {stats && stats.unplayable > 0 ? (
               <span
-                className="text-auburn"
-                title={`${stats.unplayable} track${stats.unplayable === 1 ? "" : "s"} can't be decoded (APE/WMA/WavPack/TAK) and will be skipped`}
+                className={
+                  stats.unplayableUnacked > 0 ? "text-auburn" : "text-muted/70"
+                }
               >
                 {" · "}
                 {stats.unplayable} unplayable
+                {stats.unplayableUnacked === 0 ? " (acknowledged)" : ""}
               </span>
             ) : null}
-          </span>
+            {lastScannedAt != null ? (
+              <span className="text-muted/70">
+                {" · "}
+                scanned {fmtAgo(lastScannedAt)}
+              </span>
+            ) : null}
+          </button>
           <button
             onClick={doScan}
             disabled={scanning}
@@ -1163,6 +1184,18 @@ export default function App() {
           </span>
         )}
       </footer>
+
+      <Health
+        open={healthOpen}
+        onClose={() => setHealthOpen(false)}
+        onRescan={doScan}
+        scanning={scanning}
+        onAcknowledged={() => {
+          libraryStats()
+            .then(setStats)
+            .catch(() => {});
+        }}
+      />
     </div>
   );
 }

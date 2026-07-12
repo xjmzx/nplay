@@ -5,6 +5,45 @@ siblings (ndisc / ndisc.view / glmps), nplay is a local player and **not** a
 participant in the ndisc Nostr wire contract, so it tracks a single axis: this
 app's own semver, below.
 
+## 0.1.0-beta.4 — unreleased
+
+### Library health
+- **New "Library health" dialog**, opened from the library summary in the
+  header. Two jobs: show how far the index has drifted from disk, and explain
+  what nplay can't play — and why.
+- **Index vs disk.** Walks the music root and diffs it against the index:
+  indexed / on disk / last scanned, plus the exact files that are on disk but
+  unindexed, or indexed but gone. A **Rescan** button sits in the drift warning
+  itself. Read-only — it touches nothing.
+- **Problem files, grouped by cause, each with its fix stated.** *No decoder*
+  (APE/WavPack/TAK/WMA — lossless formats rodio can't read; the files are not
+  damaged, and transcoding to FLAC is lossless→lossless). *No picture*
+  (non-mp4/m4v containers — these still play, audio-only; the fix is to remux
+  to H.264/AAC faststart mp4, which is ntree's "Normalize videos" job).
+- **Acknowledgement.** Files can be marked seen-and-accepted; they dim out, stop
+  being counted, and the header's `unplayable` warning goes from auburn to
+  muted, reading `N unplayable (acknowledged)`. The count *stays* — the fact
+  hasn't gone away — but it stops shouting. Keyed by **path, not track id**:
+  ids are reassigned on every wipe-and-rebuild, so an id-keyed acknowledgement
+  would silently detach at the next scan, which defeats the point.
+- **nplay never deletes library files.** Both problems above are fixable rather
+  than disposable, and anything already published to Nostr is tracked by ndisc —
+  which is where a destructive operation would have to live, so it could refuse
+  to touch a published release.
+
+### Fixed
+- **A rescan no longer discards cached BPM.** `scan_library` is wipe-and-rebuild,
+  and it was throwing away every BPM it had. Each one costs an aubio subprocess,
+  so they accrue slowly over months of listening — silently binning them on every
+  scan meant they could never accumulate. Now carried across by path (the file at
+  a given path is the same file; its tempo did not change because we re-indexed).
+
+### Added
+- `last_scanned_at` is recorded on every successful scan (in a new `meta` table
+  that scans deliberately do not wipe) and surfaced in the header as
+  `scanned N ago`. It rides on the cheap `library_stats` call, not on
+  `library_health`, so the header never triggers an 18,000-file disk walk.
+
 ## 0.1.0-beta.3 — 2026-07-07
 
 ### BPM readout

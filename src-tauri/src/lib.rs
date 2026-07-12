@@ -7,7 +7,7 @@
 // Playback itself is done webview-side via HTMLMediaElement over the
 // asset protocol — no Rust playback command is needed.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::hash::{Hash, Hasher};
 use std::io::{Read, Seek, SeekFrom};
@@ -15,13 +15,14 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use lofty::config::{ParseOptions, ParsingMode};
 use lofty::file::{AudioFile, TaggedFileExt};
 use lofty::probe::Probe;
 use lofty::tag::ItemKey;
 use rayon::prelude::*;
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, OptionalExtension};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State};
 use walkdir::WalkDir;
@@ -145,7 +146,43 @@ CREATE TABLE IF NOT EXISTS tracks (
 );
 CREATE INDEX IF NOT EXISTS idx_tracks_album ON tracks(album_id);
 CREATE INDEX IF NOT EXISTS idx_albums_artist ON albums(artist);
+
+-- Key/value store for facts about the index itself (e.g. when it was last
+-- rebuilt). Deliberately NOT wiped by a scan: albums/tracks are derived from
+-- disk and get wiped-and-rebuilt, but this describes the derivation.
+CREATE TABLE IF NOT EXISTS meta (
+  key   TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
+
+-- Files the user has seen, understood, and chosen to live with — an APE rip
+-- that will never decode, a .avi that will never show picture. Keyed by PATH,
+-- not track id: ids are reassigned on every wipe-and-rebuild, so an id-keyed
+-- acknowledgement would silently detach at the next scan. Survives scans by
+-- design; that is the entire point of acknowledging something.
+CREATE TABLE IF NOT EXISTS acknowledged (
+  path      TEXT PRIMARY KEY,
+  acked_at  INTEGER NOT NULL DEFAULT (strftime('%s','now'))
+);
 ";
+
+/// Read a `meta` value, or None.
+fn meta_get(conn: &Connection, key: &str) -> Option<String> {
+    conn.query_row("SELECT value FROM meta WHERE key = ?1", params![key], |r| {
+        r.get::<_, String>(0)
+    })
+    .optional()
+    .ok()
+    .flatten()
+}
+
+fn meta_set(conn: &Connection, key: &str, value: &str) {
+    let _ = conn.execute(
+        "INSERT INTO meta (key, value) VALUES (?1, ?2)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        params![key, value],
+    );
+}
 
 fn open(app: &AppHandle) -> Result<Connection, String> {
     let conn = Connection::open(db_path(app)?).map_err(|e| e.to_string())?;
@@ -558,6 +595,22 @@ fn scan_library(app: AppHandle) -> Result<ScanSummary, String> {
     let mut n_tracks = 0usize;
     let mut n_videos = 0usize;
     let n_albums = albums.len();
+
+    // Carry cached BPM across the rebuild, keyed by path (ids are reassigned).
+    // BPM costs an aubio subprocess per track, so it accrues slowly over months
+    // of listening — silently discarding it on every rescan would mean it never
+    // accumulates. The file at a given path is the same file; its tempo did not
+    // change because we re-indexed.
+    let prior_bpm: HashMap<String, f64> = {
+        let mut stmt = conn
+            .prepare("SELECT path, bpm FROM tracks WHERE bpm IS NOT NULL")
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, f64>(1)?)))
+            .map_err(|e| e.to_string())?;
+        rows.filter_map(|r| r.ok()).collect()
+    };
+
     {
         let tx = conn.transaction().map_err(|e| e.to_string())?;
         tx.execute("DELETE FROM tracks", []).map_err(|e| e.to_string())?;
@@ -579,13 +632,15 @@ fn scan_library(app: AppHandle) -> Result<ScanSummary, String> {
             .map_err(|e| e.to_string())?;
             let album_id = tx.last_insert_rowid();
             for t in &a.tracks {
+                let path = t.path.to_string_lossy().to_string();
+                let bpm = prior_bpm.get(&path).copied();
                 tx.execute(
                     "INSERT OR IGNORE INTO tracks
-                     (album_id, path, title, track_no, disc_no, duration, codec, sample_rate, bit_depth, is_video, playable)
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+                     (album_id, path, title, track_no, disc_no, duration, codec, sample_rate, bit_depth, is_video, playable, bpm)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
                     params![
                         album_id,
-                        t.path.to_string_lossy(),
+                        path,
                         t.title.as_deref().unwrap_or(""),
                         t.track_no,
                         t.disc_no,
@@ -595,6 +650,7 @@ fn scan_library(app: AppHandle) -> Result<ScanSummary, String> {
                         t.bit_depth,
                         t.is_video as i64,
                         t.playable as i64,
+                        bpm,
                     ],
                 )
                 .map_err(|e| e.to_string())?;
@@ -606,6 +662,18 @@ fn scan_library(app: AppHandle) -> Result<ScanSummary, String> {
         }
         tx.commit().map_err(|e| e.to_string())?;
     }
+
+    // Stamp the rebuild. Written after commit so a failed scan never claims to
+    // have happened.
+    meta_set(
+        &conn,
+        "last_scanned_at",
+        &SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0)
+            .to_string(),
+    );
 
     let _ = app.emit(
         "scan-progress",
@@ -915,19 +983,227 @@ struct LibraryStats {
     tracks: i64,
     /// Tracks whose format the audio backend can't decode (APE/WMA/etc.).
     unplayable: i64,
+    /// Of those, how many the user has NOT yet acknowledged. Acknowledging is
+    /// meant to silence the warning, so this — not `unplayable` — is what the
+    /// header nags about; the total stays available so the fact isn't lost.
+    unplayable_unacked: i64,
+    /// When the index was last rebuilt. Cheap (a `meta` read) — deliberately
+    /// here rather than in library_health, which walks the whole music root.
+    last_scanned_at: Option<i64>,
+}
+
+// ---------------------------------------------------------------------------
+// Library health — what nplay cannot play, and how far the index has drifted
+// ---------------------------------------------------------------------------
+//
+// nplay is a PLAYER: this surface reports, it never deletes. The two things it
+// can't play are both fixable, not disposable:
+//
+//   * undecodable audio — APE/WavPack/TAK/WMA. Lossless formats rodio has no
+//     decoder for. The files are fine; transcoding APE→FLAC is lossless→lossless.
+//   * pictureless video — anything that isn't mp4/m4v. WebKit renders the
+//     web-baseline container only; the rest play audio-only via ffmpeg. The fix
+//     is to remux/transcode (ntree's "Normalize videos"), not to bin them.
+//
+// Deleting library files is deliberately NOT offered here. It belongs where
+// release identity and Nostr publish state live (ndisc), which can refuse to
+// destroy anything already published.
+
+/// Containers the webview `<video>` element can actually draw.
+const PICTURE_EXTS: &[&str] = &["mp4", "m4v"];
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ProblemFile {
+    path: String,
+    /// "undecodable_audio" | "pictureless_video"
+    kind: String,
+    codec: String,
+    artist: String,
+    album: String,
+    title: String,
+    acknowledged: bool,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LibraryHealth {
+    last_scanned_at: Option<i64>,
+    indexed_tracks: i64,
+    /// Media files found on disk right now under the music root.
+    on_disk: i64,
+    /// Indexed, but the file is no longer on disk.
+    stale: Vec<String>,
+    /// On disk, but not in the index — a rescan would pick these up.
+    unindexed: Vec<String>,
+    problems: Vec<ProblemFile>,
+}
+
+/// Walk the music root and diff it against the index, and list what we can't
+/// play. Read-only: touches nothing on disk, changes nothing in the DB.
+#[tauri::command]
+fn library_health(app: AppHandle) -> Result<LibraryHealth, String> {
+    let root = read_music_root(&app);
+    let conn = open(&app)?;
+
+    let last_scanned_at = meta_get(&conn, "last_scanned_at")
+        .and_then(|s| s.parse::<i64>().ok());
+
+    // Index side.
+    let mut indexed: HashSet<String> = HashSet::new();
+    {
+        let mut stmt = conn
+            .prepare("SELECT path FROM tracks")
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map([], |r| r.get::<_, String>(0))
+            .map_err(|e| e.to_string())?;
+        for r in rows {
+            indexed.insert(r.map_err(|e| e.to_string())?);
+        }
+    }
+
+    // Disk side — same media filter the scanner uses, so the diff is apples to
+    // apples (anything the scanner would skip must not read as "unindexed").
+    let mut on_disk: HashSet<String> = HashSet::new();
+    for entry in WalkDir::new(&root).into_iter().filter_map(|e| e.ok()) {
+        if !entry.file_type().is_file() {
+            continue;
+        }
+        if is_media(entry.path()) {
+            on_disk.insert(entry.path().to_string_lossy().to_string());
+        }
+    }
+
+    let mut stale: Vec<String> = indexed.difference(&on_disk).cloned().collect();
+    let mut unindexed: Vec<String> = on_disk.difference(&indexed).cloned().collect();
+    stale.sort();
+    unindexed.sort();
+
+    // Acknowledged set.
+    let mut acked: HashSet<String> = HashSet::new();
+    {
+        let mut stmt = conn
+            .prepare("SELECT path FROM acknowledged")
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map([], |r| r.get::<_, String>(0))
+            .map_err(|e| e.to_string())?;
+        for r in rows {
+            acked.insert(r.map_err(|e| e.to_string())?);
+        }
+    }
+
+    // What we cannot play, and why.
+    let mut problems: Vec<ProblemFile> = Vec::new();
+    {
+        let mut stmt = conn
+            .prepare(
+                "SELECT t.path, t.title, t.codec, t.is_video, t.playable,
+                        a.artist, a.album
+                   FROM tracks t JOIN albums a ON a.id = t.album_id",
+            )
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map([], |r| {
+                Ok((
+                    r.get::<_, String>(0)?,
+                    r.get::<_, String>(1)?,
+                    r.get::<_, Option<String>>(2)?,
+                    r.get::<_, i64>(3)? != 0,
+                    r.get::<_, i64>(4)? != 0,
+                    r.get::<_, String>(5)?,
+                    r.get::<_, String>(6)?,
+                ))
+            })
+            .map_err(|e| e.to_string())?;
+
+        for row in rows {
+            let (path, title, codec, is_video, playable, artist, album) =
+                row.map_err(|e| e.to_string())?;
+            let ext = std::path::Path::new(&path)
+                .extension()
+                .and_then(|e| e.to_str())
+                .unwrap_or("")
+                .to_lowercase();
+
+            let kind = if !playable {
+                "undecodable_audio"
+            } else if is_video && !PICTURE_EXTS.contains(&ext.as_str()) {
+                // Plays, but audio-only — no picture in the webview.
+                "pictureless_video"
+            } else {
+                continue;
+            };
+
+            problems.push(ProblemFile {
+                acknowledged: acked.contains(&path),
+                kind: kind.to_string(),
+                codec: codec.unwrap_or_else(|| ext.clone()),
+                path,
+                artist,
+                album,
+                title,
+            });
+        }
+    }
+    problems.sort_by(|a, b| (&a.kind, &a.path).cmp(&(&b.kind, &b.path)));
+
+    Ok(LibraryHealth {
+        last_scanned_at,
+        indexed_tracks: indexed.len() as i64,
+        on_disk: on_disk.len() as i64,
+        stale,
+        unindexed,
+        problems,
+    })
+}
+
+/// Mark problem files as seen-and-accepted (or un-mark them). Purely a note to
+/// self — it changes nothing about playback, and nothing on disk.
+#[tauri::command]
+fn acknowledge_files(
+    app: AppHandle,
+    paths: Vec<String>,
+    acknowledged: bool,
+) -> Result<(), String> {
+    let mut conn = open(&app)?;
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+    for p in &paths {
+        if acknowledged {
+            tx.execute(
+                "INSERT OR IGNORE INTO acknowledged (path) VALUES (?1)",
+                params![p],
+            )
+            .map_err(|e| e.to_string())?;
+        } else {
+            tx.execute("DELETE FROM acknowledged WHERE path = ?1", params![p])
+                .map_err(|e| e.to_string())?;
+        }
+    }
+    tx.commit().map_err(|e| e.to_string())
 }
 
 /// Headline counts so the user can see what a scan brought in.
 #[tauri::command]
 fn library_stats(app: AppHandle) -> Result<LibraryStats, String> {
     let conn = open(&app)?;
+    let last_scanned_at =
+        meta_get(&conn, "last_scanned_at").and_then(|s| s.parse::<i64>().ok());
     conn.query_row(
-        "SELECT COUNT(*), COALESCE(SUM(CASE WHEN playable = 0 THEN 1 ELSE 0 END), 0) FROM tracks",
+        "SELECT COUNT(*),
+                COALESCE(SUM(CASE WHEN playable = 0 THEN 1 ELSE 0 END), 0),
+                COALESCE(SUM(CASE WHEN playable = 0
+                                   AND path NOT IN (SELECT path FROM acknowledged)
+                              THEN 1 ELSE 0 END), 0)
+           FROM tracks",
         [],
         |r| {
             Ok(LibraryStats {
                 tracks: r.get(0)?,
                 unplayable: r.get(1)?,
+                unplayable_unacked: r.get(2)?,
+                last_scanned_at,
             })
         },
     )
@@ -1726,6 +2002,8 @@ pub fn run() {
             default_playlist_dir,
             library_db_path,
             track_bpm,
+            library_health,
+            acknowledge_files,
             audio_play,
             audio_pause,
             audio_resume,
