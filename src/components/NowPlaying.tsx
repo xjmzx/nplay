@@ -1,7 +1,13 @@
 import { useEffect, useState, type RefObject } from "react";
 import { Film, Maximize2, Music4 } from "lucide-react";
 import { cn } from "../lib/cn";
-import { fileSrc, videoSrc, type Album, type Track } from "../lib/tauri";
+import {
+  fileSrc,
+  videoSrc,
+  type Album,
+  type Track,
+  type TrackBpm,
+} from "../lib/tauri";
 
 interface NowPlayingProps {
   track: Track | null;
@@ -14,8 +20,9 @@ interface NowPlayingProps {
   volume: number;
   /** Shared handle so the app transport (header/footer) drives the <video>. */
   elRef: RefObject<HTMLVideoElement | null>;
-  /** Detected BPM for the current track, or null while pending/unknown. */
-  bpm: number | null;
+  /** BPM for the current track (with its source), or null while pending or
+   *  undetectable. */
+  bpm: TrackBpm | null;
 }
 
 // The unified stage: the media square shows album art for audio and the live
@@ -49,11 +56,12 @@ export function NowPlaying({
     setCoverLoaded(false);
   }, [cover]);
 
-  const meta: string[] = [];
-  if (track?.codec) meta.push(track.codec);
-  if (track?.sampleRate) meta.push(`${(track.sampleRate / 1000).toFixed(1)} kHz`);
-  if (track?.bitDepth) meta.push(`${track.bitDepth}-bit`);
-  if (bpm != null) meta.push(`${bpm} BPM`);
+  // The format specs read as one group; BPM is a musical fact, not a container
+  // fact, so it is kept out of the join and rendered on its own.
+  const specs: string[] = [];
+  if (track?.codec) specs.push(track.codec);
+  if (track?.sampleRate) specs.push(`${(track.sampleRate / 1000).toFixed(1)} kHz`);
+  if (track?.bitDepth) specs.push(`${track.bitDepth}-bit`);
 
   function goFullscreen() {
     try {
@@ -143,13 +151,60 @@ export function NowPlaying({
             {album?.album}
             {album?.year != null ? ` · ${album.year}` : ""}
           </div>
-          {meta.length > 0 && (
-            <div className="mt-1 text-[11px] text-fg/55 tabular-nums">
-              {meta.join("  ·  ")}
+          {/* Technical detail. Deliberately louder than it was — this is the
+              stuff you actually interrogate a track for, and at 11px/55% it was
+              quieter than the release year above it. The specs stay one group;
+              BPM is set apart because it is a musical fact rather than a
+              container fact, and it's the one value here a human can assert
+              (mauve = the suite's BPM colour, matching nsmpl's BPM chip). */}
+          {(specs.length > 0 || bpm != null) && (
+            <div className="mt-2.5 flex flex-wrap items-center justify-center gap-x-2 gap-y-1.5 text-[13px] font-medium tabular-nums">
+              {specs.map((s, i) => (
+                <span key={s} className="flex items-center gap-x-2">
+                  {i > 0 && <span className="text-muted/50">·</span>}
+                  <span className="text-fg/80">{s}</span>
+                </span>
+              ))}
+              {/* A detected BPM is a *guess* — aubio has a known octave-error
+                  problem (half/double tempo) — so it is marked `?` and shown
+                  muted. A human-asserted one (nsmpl's bar-derived `bars`, or a
+                  tap) is ground truth and reads in full mauve. The number alone
+                  would flatten that distinction, which is the whole reason the
+                  suite tracks a source at all. */}
+              {bpm != null &&
+                (() => {
+                  const guess = bpm.source === "aubio";
+                  return (
+                    <span
+                      title={
+                        guess
+                          ? `${bpm.bpm} BPM — detected by aubio, so treat it as a guess (it commonly locks onto half or double the real tempo). Cut a loop in nsmpl and pin the bar count to replace it with an exact figure.`
+                          : `${bpm.bpm} BPM — asserted by you (${bpm.source}), not detected. aubio can never overwrite this.`
+                      }
+                      className={cn(
+                        "px-1.5 py-0.5",
+                        guess
+                          ? "bg-mauve/10 text-mauve/70"
+                          : "bg-mauve/15 text-mauve",
+                      )}
+                    >
+                      {bpm.bpm}
+                      {guess && <span className="text-muted/80">?</span>}
+                      <span
+                        className={cn(
+                          "ml-1 text-[10px]",
+                          guess ? "text-mauve/50" : "text-mauve/70",
+                        )}
+                      >
+                        BPM
+                      </span>
+                    </span>
+                  );
+                })()}
             </div>
           )}
           {track.isVideo && !showVideo && (
-            <div className="mt-1 text-[11px] text-muted/70">
+            <div className="mt-1.5 text-[11px] text-muted/70">
               Audio only — convert to mp4 for picture.
             </div>
           )}

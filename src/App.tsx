@@ -54,6 +54,7 @@ import {
   scanLibrary,
   setMusicRoot,
   trackBpm,
+  type TrackBpm,
   tracksByPaths,
   writeTextFile,
   type Album,
@@ -210,9 +211,10 @@ export default function App() {
   }, [albums]);
   const currentAlbum = current ? albumById.get(current.albumId) ?? null : null;
 
-  // Detected BPM for the current track — reset on track change, then filled
-  // in lazily (aubio runs off-thread; cached in the DB after the first pass).
-  const [bpm, setBpm] = useState<number | null>(null);
+  // BPM for the current track — reset on track change, then filled in lazily.
+  // Carries its `source`, so the UI can tell a machine guess (aubio) from a
+  // tempo a human asserted in nsmpl.
+  const [bpm, setBpm] = useState<TrackBpm | null>(null);
   useEffect(() => {
     setBpm(null);
     const id = current?.id;

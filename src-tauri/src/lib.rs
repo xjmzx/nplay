@@ -1530,6 +1530,17 @@ fn bpm_store_put_many(root: &str, items: &[(String, f64, &str)]) -> Result<usize
     Ok(written)
 }
 
+/// The stored entry for one absolute path, source and all.
+fn bpm_store_entry(root: &str, abs: &str) -> Option<BpmEntry> {
+    let rel = Path::new(abs).strip_prefix(Path::new(root)).ok()?;
+    let key = rel.to_string_lossy().to_string();
+    load_bpm_store()
+        .entries
+        .get(BPM_ROOT_NAME)
+        .and_then(|t| t.get(&key))
+        .cloned()
+}
+
 /// Every stored BPM for `root`, as absolute path → bpm — the shape the scanner
 /// wants when re-seeding the rebuilt `tracks` table.
 fn bpm_store_for_root(root: &str) -> HashMap<String, f64> {
@@ -1573,14 +1584,24 @@ fn bpm_store_stats() -> Result<BpmStoreStats, String> {
     })
 }
 
-/// BPM for a track, detected lazily via `aubio tempo` and cached in the DB
-/// (whole-number). Returns `Ok(Some(bpm))` once known, `Ok(None)` when it
-/// can't be determined (aubio not installed, too few beats, etc.) so the UI
-/// can silently show nothing rather than surface an error. Runs off the
-/// webview thread like the other sync commands, so the ~1–3s first analysis
-/// doesn't stall playback.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TrackBpm {
+    bpm: f64,
+    /// `aubio` (detected — a guess, hence the UI's `?`) | `tap` | `bars`
+    /// (human-asserted — ground truth). The number alone is not enough: a
+    /// hand-derived tempo and a machine guess deserve to read differently.
+    source: String,
+}
+
+/// BPM for a track. Consults the suite store first (a human-asserted value
+/// wins), then this DB's cache, then falls back to detecting it with `aubio
+/// tempo` and caching the result. `Ok(None)` when it can't be determined
+/// (aubio not installed, too few beats, …) so the UI can show nothing rather
+/// than an error. Runs off the webview thread like the other sync commands, so
+/// the ~1–3s first analysis doesn't stall playback.
 #[tauri::command]
-fn track_bpm(app: AppHandle, id: i64) -> Result<Option<f64>, String> {
+fn track_bpm(app: AppHandle, id: i64) -> Result<Option<TrackBpm>, String> {
     let conn = open(&app)?;
     let (path, cached): (String, Option<f64>) = conn
         .query_row(
@@ -1589,8 +1610,37 @@ fn track_bpm(app: AppHandle, id: i64) -> Result<Option<f64>, String> {
             |r| Ok((r.get(0)?, r.get::<_, Option<f64>>(1)?)),
         )
         .map_err(|e| e.to_string())?;
+    let root = read_music_root(&app);
+
+    // The suite store is consulted BEFORE this DB's own cache, because a
+    // human-asserted value (nsmpl's bar-derived BPM, or a tap) outranks
+    // anything we detected — including a stale aubio number already sitting in
+    // `tracks.bpm` from a previous play. Without this, the store would be
+    // correctly *protected* from being overwritten and yet never *read*, so
+    // nplay would keep showing aubio's guess for a track the user had
+    // hand-corrected in nsmpl, until the next full rescan. The write side alone
+    // does not make the round trip work.
+    let stored = bpm_store_entry(&root, &path);
+    if let Some(e) = &stored {
+        if e.source != SOURCE_DETECTED {
+            // Fold it into the cache so the rest of the app agrees.
+            let _ = conn.execute(
+                "UPDATE tracks SET bpm = ?1 WHERE id = ?2",
+                params![e.bpm, id],
+            );
+            return Ok(Some(TrackBpm {
+                bpm: e.bpm,
+                source: e.source.clone(),
+            }));
+        }
+    }
     if let Some(b) = cached {
-        return Ok(Some(b));
+        // A cached number with no store entry can only have come from aubio —
+        // this DB has never had any other way of producing one.
+        let source = stored
+            .map(|e| e.source)
+            .unwrap_or_else(|| SOURCE_DETECTED.to_string());
+        return Ok(Some(TrackBpm { bpm: b, source }));
     }
     // aubio reads FLAC/MP3/… (and a video's audio track) directly — no
     // transcode needed for whole-file analysis.
@@ -1601,9 +1651,11 @@ fn track_bpm(app: AppHandle, id: i64) -> Result<Option<f64>, String> {
     let _ = conn.execute("UPDATE tracks SET bpm = ?1 WHERE id = ?2", params![bpm, id]);
     // Durable copy. Best-effort: if the shared dir is unwritable we still have
     // the DB cache, and playback must not care.
-    let root = read_music_root(&app);
-    let _ = bpm_store_put_many(&root, &[(path, bpm, "aubio")]);
-    Ok(Some(bpm))
+    let _ = bpm_store_put_many(&root, &[(path, bpm, SOURCE_DETECTED)]);
+    Ok(Some(TrackBpm {
+        bpm,
+        source: SOURCE_DETECTED.to_string(),
+    }))
 }
 
 /// Run `aubio tempo` on a file and return a whole-number BPM. aubio 0.4.x

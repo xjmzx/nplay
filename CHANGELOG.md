@@ -5,6 +5,36 @@ siblings (ndisc / ndisc.view / glmps), nplay is a local player and **not** a
 participant in the ndisc Nostr wire contract, so it tracks a single axis: this
 app's own semver, below.
 
+## 0.1.0-beta.8 — unreleased
+
+### BPM round trip — nplay now *reads* the store, not just writes it
+- **Closes a hole that made the whole store pointless in practice.** nsmpl can
+  now assert a BPM (see nsmpl v0.3.0-beta.7 — a bar-derived, human-asserted
+  value), and the precedence rule correctly stopped aubio *overwriting* it. But
+  `track_bpm` only ever consulted its own `tracks.bpm` cache, and the store was
+  read at **scan** time alone. So playing a hand-corrected track made nplay run
+  aubio, cache the guess, and **display the guess** — while the store quietly
+  held the right answer, until the next full rescan. Protection without
+  consultation is worthless.
+- `track_bpm` now resolves in order: **suite store (human-asserted) → DB cache →
+  detect with aubio**. A human value short-circuits aubio entirely and is folded
+  back into the cache so the rest of the app agrees.
+
+### Now playing — technical detail
+- The spec line was **quieter than the release year above it**, which is
+  backwards: this is what you actually interrogate a track for. Now 13px,
+  `font-medium`, `text-fg/80` (was 11px at 55%), with more air and room to
+  spread. Title / artist / release are unchanged.
+- **BPM is set apart** from the format specs — it's a musical fact, not a
+  container fact, and it's the one value here a human can assert. Mauve, matching
+  nsmpl's BPM chip, so the two apps agree on what colour a tempo is.
+- **A detected BPM is marked `?` and shown muted.** aubio has a known
+  octave-error problem, so its number is a *guess*; a value you asserted in nsmpl
+  reads in full mauve with no `?`. `track_bpm` returns the `source` alongside the
+  number to make that distinction possible — showing the figure alone would
+  flatten exactly the thing the store exists to track. The `?` also makes visible
+  how much of the library's BPM data is still unverified.
+
 ## 0.1.0-beta.7 — unreleased
 
 ### BPM store — precedence hardened

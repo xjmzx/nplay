@@ -168,9 +168,17 @@ export function libraryDbPath(): Promise<string> {
   return invoke("library_db_path");
 }
 
-/** Detected BPM for a track (cached in the DB after the first analysis).
- *  Resolves null when it can't be determined (aubio missing / undetectable). */
-export function trackBpm(id: number): Promise<number | null> {
+export interface TrackBpm {
+  bpm: number;
+  /** "aubio" = detected (a guess — the UI marks it `?`); "tap" / "bars" =
+   *  human-asserted ground truth, which aubio can never overwrite. */
+  source: string;
+}
+
+/** BPM for a track: the suite store's human-asserted value if there is one,
+ *  else this app's cache, else detected with aubio and cached. Resolves null
+ *  when it can't be determined (aubio missing / undetectable). */
+export function trackBpm(id: number): Promise<TrackBpm | null> {
   return invoke("track_bpm", { id });
 }
 
