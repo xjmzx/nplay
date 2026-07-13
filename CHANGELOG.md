@@ -5,6 +5,41 @@ siblings (ndisc / ndisc.view / glmps), nplay is a local player and **not** a
 participant in the ndisc Nostr wire contract, so it tracks a single axis: this
 app's own semver, below.
 
+## 0.1.0-beta.7 — unreleased
+
+### BPM store — precedence hardened
+- **Fixes a latent data-loss bug in the store shipped one version ago.** The
+  precedence check was a literal, `existing.source == "tap"`, which protected a
+  human value **by name**. nsmpl already derives BPM from a cut loop's bar count
+  (`bars` — see below), and the moment it started writing, the next aubio run on
+  that track would have silently clobbered it. Nothing had been lost yet, since
+  nothing writes `bars` today; the rule was wrong before it could bite.
+- **Trust is now two tiers, not a list of names.** `aubio` is *detected* (a
+  guess — it has a known octave-error problem); `tap` and `bars` are
+  *human-asserted* (ground truth). A detection may only overwrite another
+  detection, or an absent entry. A human value may overwrite anything, newest
+  winning within the tier.
+- The rule is deliberately expressed as **what a detection is allowed to
+  overwrite**, never as a set of protected sources, so a source a given build has
+  never heard of is safe **by default** rather than by enumeration. Four unit
+  tests pin this, including the unknown-source case.
+
+### Same page on BPM across the suite
+- nsmpl has had a **manual bars-based BPM** since well before nplay met the same
+  problem: `BPM = (bars × 4 ÷ loopLen) × 60`, with the code stating outright that
+  it is a *"workaround while aubio-based auto detection remains parked"*. It is
+  currently **discarded on every file change**.
+- That is not a lesser tap-tempo — it is arguably **better**. A tap is a human
+  estimate; bars is a human *assertion* (the bar count) plus exact arithmetic on
+  a known loop length.
+- **Decided:** nsmpl writes its bars-derived BPM against the **source track under
+  root `music`**, not against the clip — a clip is an excerpt of a library track,
+  so it is the same music at the same tempo, and the source key is the one the
+  rest of the suite already uses. Not wired yet.
+- `schema/bpm-store-v1.md` gains the source table, the trust tiers, and the
+  writer rule. Nostr remains out of scope (`release.v2` is frozen → a coordinated
+  wave), and ndisc remains where BPM later becomes *portable* into file tags.
+
 ## 0.1.0-beta.6 — unreleased
 
 ### Suite-shared BPM store

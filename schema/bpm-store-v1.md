@@ -48,13 +48,38 @@ Three things follow from putting it here rather than in the DB:
   absolute paths. A file outside the root has no stable identity here and is
   simply not representable — writers skip it rather than invent a key.
 - `music` is the canonical root name for the audio library.
-- `source` is `aubio` (detected) or `tap` (confirmed by a human).
+
+## Sources and trust
+
+`source` is **open-ended**, with two trust tiers:
+
+| source | tier | who writes it |
+|---|---|---|
+| `aubio` | **detected** — a guess | nplay, on first play |
+| `tap` | **human** — ground truth | nplay's tap widget *(not built yet)* |
+| `bars` | **human** — ground truth | nsmpl, from a cut loop *(not wired yet)* |
+
+`aubio` has a known **octave-error problem** (it reports half or double tempo),
+so a detection is a guess. Anything a human asserted is ground truth — a tap,
+or nsmpl's bar-count on a cut loop, which derives the tempo by *exact
+arithmetic* from a known loop length and is if anything better than a tap.
+
+nsmpl writes its bars-derived BPM against the **source track** under root
+`music`, not against the clip: a clip is an excerpt of a library track, so it is
+the same music at the same tempo, and the source key is the one the rest of the
+suite already uses.
 
 ## Rules for writers
 
-1. **`tap` outranks `aubio`, always.** A detection must never silently overwrite
-   a hand-tapped value. aubio has a known octave-error problem (half/double
-   tempo), so a human tap is ground truth and a detection is a guess.
+1. **A detection may only overwrite another detection** (or an absent entry). A
+   human-asserted value may overwrite anything, including an older human value —
+   newest wins within a tier.
+
+   State the rule that way round — *what a detection is allowed to overwrite* —
+   and **never** as a list of protected source names. A source a given build has
+   never heard of must be safe **by default**. (This is not hypothetical: the
+   first cut of this store checked `source == "tap"`, which would have let the
+   next aubio run silently clobber every `bars` value nsmpl ever wrote.)
 2. **Write atomically** (temp file + rename). Other apps read this; a crash
    mid-write must not leave a half-written document behind.
 3. **Batch.** Read-modify-write per track would be quadratic across a

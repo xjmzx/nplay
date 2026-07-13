@@ -1381,12 +1381,37 @@ const BPM_STORE_VERSION: u32 = 1;
 /// if its own root differs.
 const BPM_ROOT_NAME: &str = "music";
 
+/// The one *detected* source. Everything else is human-asserted.
+const SOURCE_DETECTED: &str = "aubio";
+
+/// May a value from `incoming` replace a stored value from `existing`?
+///
+/// Trust has two tiers, not a list of names. `aubio` is a **guess** — it has a
+/// known octave-error problem (half/double tempo). Anything a human asserted is
+/// **ground truth**: a tap, or nsmpl's bar-count on a cut loop (which derives
+/// the tempo by exact arithmetic from a known loop length, and is if anything
+/// better than a tap).
+///
+/// Deliberately phrased as *what a detection is allowed to overwrite*, rather
+/// than *is this source a tap*. A source this build has never heard of is then
+/// protected by **default** instead of by enumeration — which is precisely the
+/// bug in the first cut of this store, where the check was `source == "tap"`
+/// and a future `bars` value would have been silently clobbered by the next
+/// aubio run.
+fn bpm_may_overwrite(existing: &str, incoming: &str) -> bool {
+    if incoming == SOURCE_DETECTED {
+        // A detection may only ever replace another detection.
+        return existing == SOURCE_DETECTED;
+    }
+    // A human-asserted value may replace anything, including an older one.
+    true
+}
+
 #[derive(Serialize, Deserialize, Clone)]
 struct BpmEntry {
     bpm: f64,
-    /// `aubio` = detected, `tap` = confirmed by a human. `tap` outranks
-    /// `aubio` and is never silently overwritten by it — a hand-tapped tempo
-    /// is ground truth, and aubio has a known octave-error problem.
+    /// `aubio` (detected) | `tap` | `bars` — open-ended. See
+    /// `bpm_may_overwrite`: precedence is by tier, not by name.
     source: String,
     at: i64,
 }
@@ -1475,10 +1500,10 @@ fn bpm_store_put_many(root: &str, items: &[(String, f64, &str)]) -> Result<usize
         };
         let key = rel.to_string_lossy().to_string();
         if let Some(existing) = table.get(&key) {
-            // Never let a detection clobber a human's tap.
-            if existing.source == "tap" && *source != "tap" {
+            if !bpm_may_overwrite(&existing.source, source) {
                 continue;
             }
+            // Unchanged — don't churn `at` (and don't dirty the file).
             if existing.bpm == *bpm && existing.source == *source {
                 continue;
             }
@@ -2328,4 +2353,37 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // The store exists so that a hand-earned BPM outlives a machine guess.
+    // These pin that rule down.
+    #[test]
+    fn detection_may_replace_a_detection() {
+        assert!(bpm_may_overwrite("aubio", "aubio"));
+    }
+
+    #[test]
+    fn detection_may_not_clobber_a_human() {
+        assert!(!bpm_may_overwrite("tap", "aubio"));
+        assert!(!bpm_may_overwrite("bars", "aubio"));
+    }
+
+    #[test]
+    fn detection_may_not_clobber_a_source_it_has_never_heard_of() {
+        // The bug this rule replaces: protecting "tap" *by name* left every
+        // future source unprotected. Unknown sources must be safe by default.
+        assert!(!bpm_may_overwrite("some-future-source", "aubio"));
+    }
+
+    #[test]
+    fn a_human_may_replace_anything() {
+        assert!(bpm_may_overwrite("aubio", "tap"));
+        assert!(bpm_may_overwrite("bars", "tap"));
+        assert!(bpm_may_overwrite("tap", "bars"));
+        assert!(bpm_may_overwrite("tap", "tap"));
+    }
 }
