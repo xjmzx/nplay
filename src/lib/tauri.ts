@@ -174,6 +174,21 @@ export function trackBpm(id: number): Promise<number | null> {
   return invoke("track_bpm", { id });
 }
 
+export interface BpmStoreStats {
+  /** ~/.local/share/ndisc-suite/bpm.json */
+  path: string;
+  entries: number;
+  /** How many were confirmed by a human tap rather than detected. */
+  tapped: number;
+  exists: boolean;
+}
+
+/** The suite-shared BPM store — the durable copy, keyed by (root, relpath).
+ *  The DB column is only a cache of it; this survives a wipe-and-rebuild. */
+export function bpmStoreStats(): Promise<BpmStoreStats> {
+  return invoke("bpm_store_stats");
+}
+
 /** Open the OS file manager with the given file selected. */
 export function revealInFileManager(path: string): Promise<void> {
   return revealItemInDir(path);

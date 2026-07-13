@@ -10,7 +10,9 @@ import {
 import { cn } from "../lib/cn";
 import {
   acknowledgeFiles,
+  bpmStoreStats,
   libraryHealth,
+  type BpmStoreStats,
   type LibraryHealth,
   type ProblemFile,
 } from "../lib/tauri";
@@ -59,6 +61,7 @@ export function Health({
   onAcknowledged?: () => void;
 }) {
   const [health, setHealth] = useState<LibraryHealth | null>(null);
+  const [bpm, setBpm] = useState<BpmStoreStats | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showAcked, setShowAcked] = useState(false);
@@ -68,6 +71,9 @@ export function Health({
     setError(null);
     try {
       setHealth(await libraryHealth());
+      // Separate concern, separate failure: a missing suite dir must not make
+      // the whole dialog read as broken.
+      setBpm(await bpmStoreStats().catch(() => null));
     } catch (e) {
       setError(String(e));
     } finally {
@@ -216,6 +222,30 @@ export function Health({
               )
             )}
           </section>
+
+          {/* ---- BPM store ------------------------------------------------ */}
+          {bpm && (
+            <section className="mb-4">
+              <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
+                <Stat label="bpm known" value={bpm.entries.toLocaleString()} />
+                <Stat label="hand-tapped" value={bpm.tapped.toLocaleString()} />
+              </div>
+              <p className="mt-2 text-muted leading-relaxed">
+                BPM is detected once, on first play, and kept in the
+                suite-shared store — not just this app's index, which is wiped
+                and rebuilt on every scan. It survives a rebuild, and nsmpl and
+                ndisc can read it.
+              </p>
+              <p className="mt-1 font-mono text-mauve break-all" title={bpm.path}>
+                {bpm.path}
+                {!bpm.exists && (
+                  <span className="ml-2 font-sans text-muted">
+                    (not written yet)
+                  </span>
+                )}
+              </p>
+            </section>
+          )}
 
           {/* ---- Problem files ------------------------------------------- */}
           {[...groups.entries()].map(([kind, files]) => {

@@ -7,7 +7,7 @@
 // Playback itself is done webview-side via HTMLMediaElement over the
 // asset protocol — no Rust playback command is needed.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs;
 use std::hash::{Hash, Hasher};
 use std::io::{Read, Seek, SeekFrom};
@@ -23,7 +23,7 @@ use lofty::probe::Probe;
 use lofty::tag::ItemKey;
 use rayon::prelude::*;
 use rusqlite::{params, Connection, OptionalExtension};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager, State};
 use walkdir::WalkDir;
 
@@ -89,6 +89,15 @@ fn app_data_dir(app: &AppHandle) -> Result<PathBuf, String> {
         .map_err(|e| format!("app_data_dir: {e}"))?;
     fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     Ok(dir)
+}
+
+/// Where the suite's apps hand each other state (ndisc's `published.json`,
+/// this app's `bpm.json`). Not per-app data: deliberately outside every app's
+/// own data dir, because the whole point is that the others can read it.
+/// Same literal path as ndisc's `suite_shared_dir()`.
+fn suite_shared_dir() -> Result<PathBuf, String> {
+    let home = std::env::var("HOME").map_err(|e| format!("HOME: {e}"))?;
+    Ok(PathBuf::from(home).join(".local/share/ndisc-suite"))
 }
 
 // Debug builds (`tauri dev`) use a separate db + config so development
@@ -687,7 +696,7 @@ fn scan_library(app: AppHandle) -> Result<ScanSummary, String> {
     // of listening — silently discarding it on every rescan would mean it never
     // accumulates. The file at a given path is the same file; its tempo did not
     // change because we re-indexed.
-    let prior_bpm: HashMap<String, f64> = {
+    let db_bpm: HashMap<String, f64> = {
         let mut stmt = conn
             .prepare("SELECT path, bpm FROM tracks WHERE bpm IS NOT NULL")
             .map_err(|e| e.to_string())?;
@@ -696,6 +705,28 @@ fn scan_library(app: AppHandle) -> Result<ScanSummary, String> {
             .map_err(|e| e.to_string())?;
         rows.filter_map(|r| r.ok()).collect()
     };
+
+    // The suite store is the durable copy and wins: it survives a lost
+    // library.db entirely, and it is where a human-tapped tempo lives (which
+    // must not be overwritten by whatever aubio last guessed into this DB).
+    let stored_bpm = bpm_store_for_root(&root);
+    let mut prior_bpm = db_bpm.clone();
+    prior_bpm.extend(stored_bpm.iter().map(|(k, v)| (k.clone(), *v)));
+
+    // Migration / repair: anything this DB knows that the store doesn't, push
+    // out. On the first scan after this change that hands the store every BPM
+    // earned so far; afterwards it's a no-op. Best-effort — a scan must not
+    // fail because the shared dir is unwritable.
+    let to_export: Vec<(String, f64, &str)> = db_bpm
+        .iter()
+        .filter(|(p, _)| !stored_bpm.contains_key(*p))
+        .map(|(p, b)| (p.clone(), *b, "aubio"))
+        .collect();
+    match bpm_store_put_many(&root, &to_export) {
+        Ok(n) if n > 0 => eprintln!("bpm store: exported {n} cached BPM value(s)"),
+        Err(e) => eprintln!("bpm store: export skipped ({e})"),
+        _ => {}
+    }
 
     {
         let tx = conn.transaction().map_err(|e| e.to_string())?;
@@ -1328,6 +1359,195 @@ fn library_db_path(app: AppHandle) -> Result<String, String> {
     Ok(db_path(&app)?.to_string_lossy().into_owned())
 }
 
+// ---- suite-shared BPM store -----------------------------------------------
+//
+// `~/.local/share/ndisc-suite/bpm.json` — see schema/bpm-store-v1.md.
+//
+// nplay's `tracks.bpm` column is a *cache*: the table is wiped and rebuilt on
+// every scan, and it is keyed by absolute path. BPM, though, is expensive to
+// earn (an aubio subprocess per track, accruing over months of listening) and
+// — once a human has tapped it — is a fact about the recording, not about this
+// machine's index. So the durable copy lives beside the published manifest, in
+// the suite-shared dir, keyed by (root, relpath) per the suite's roots model.
+//
+// This file is deliberately a plain document rather than a second SQLite: it
+// exists to be *read by other apps* (nsmpl, which wants BPM; and later ndisc,
+// which already writes tags and can therefore make BPM portable by folding it
+// into the files themselves). Writing to it is best-effort throughout — a BPM
+// store failure must never break playback or a scan.
+const BPM_STORE_VERSION: u32 = 1;
+/// The suite's canonical name for the audio library root. `roots` records the
+/// absolute path it resolved to, so a consumer can rebuild absolute paths even
+/// if its own root differs.
+const BPM_ROOT_NAME: &str = "music";
+
+#[derive(Serialize, Deserialize, Clone)]
+struct BpmEntry {
+    bpm: f64,
+    /// `aubio` = detected, `tap` = confirmed by a human. `tap` outranks
+    /// `aubio` and is never silently overwritten by it — a hand-tapped tempo
+    /// is ground truth, and aubio has a known octave-error problem.
+    source: String,
+    at: i64,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct BpmStore {
+    version: u32,
+    generated_at: i64,
+    /// root name → absolute path.
+    roots: BTreeMap<String, String>,
+    /// root name → relpath → entry. BTreeMap so the file has a stable order
+    /// and diffs cleanly.
+    entries: BTreeMap<String, BTreeMap<String, BpmEntry>>,
+}
+
+impl BpmStore {
+    fn empty() -> Self {
+        BpmStore {
+            version: BPM_STORE_VERSION,
+            generated_at: 0,
+            roots: BTreeMap::new(),
+            entries: BTreeMap::new(),
+        }
+    }
+}
+
+fn bpm_store_path() -> Result<PathBuf, String> {
+    Ok(suite_shared_dir()?.join("bpm.json"))
+}
+
+fn now_unix() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0)
+}
+
+/// Read the store. A missing file is the normal cold state, not an error; a
+/// corrupt one is treated as empty rather than blocking BPM entirely (the DB
+/// cache still works, and the next write rebuilds it).
+fn load_bpm_store() -> BpmStore {
+    let Ok(path) = bpm_store_path() else {
+        return BpmStore::empty();
+    };
+    let Ok(text) = fs::read_to_string(&path) else {
+        return BpmStore::empty();
+    };
+    serde_json::from_str(&text).unwrap_or_else(|_| BpmStore::empty())
+}
+
+/// Write atomically (temp + rename) so a crash mid-write can't leave a
+/// half-written store behind — other apps read this file.
+fn save_bpm_store(store: &BpmStore) -> Result<(), String> {
+    let path = bpm_store_path()?;
+    let dir = path.parent().ok_or("bpm store has no parent dir")?;
+    fs::create_dir_all(dir).map_err(|e| format!("create {}: {e}", dir.display()))?;
+    let json = serde_json::to_string_pretty(store).map_err(|e| e.to_string())?;
+    let tmp = path.with_extension("json.tmp");
+    fs::write(&tmp, json).map_err(|e| format!("write {}: {e}", tmp.display()))?;
+    fs::rename(&tmp, &path).map_err(|e| format!("rename {}: {e}", path.display()))?;
+    Ok(())
+}
+
+/// Fold a batch of (absolute path, bpm, source) into the store in one
+/// read-modify-write. Batched deliberately: a per-track load+save would be
+/// quadratic over an 18k-track backfill.
+fn bpm_store_put_many(root: &str, items: &[(String, f64, &str)]) -> Result<usize, String> {
+    if items.is_empty() {
+        return Ok(0);
+    }
+    let mut store = load_bpm_store();
+    let root_path = Path::new(root);
+    let table = store
+        .entries
+        .entry(BPM_ROOT_NAME.to_string())
+        .or_default();
+
+    let now = now_unix();
+    let mut written = 0usize;
+    for (abs, bpm, source) in items {
+        // Anything outside the root has no stable (root, relpath) identity, so
+        // it simply isn't representable here — skip rather than invent a key.
+        let Ok(rel) = Path::new(abs).strip_prefix(root_path) else {
+            continue;
+        };
+        let key = rel.to_string_lossy().to_string();
+        if let Some(existing) = table.get(&key) {
+            // Never let a detection clobber a human's tap.
+            if existing.source == "tap" && *source != "tap" {
+                continue;
+            }
+            if existing.bpm == *bpm && existing.source == *source {
+                continue;
+            }
+        }
+        table.insert(
+            key,
+            BpmEntry {
+                bpm: *bpm,
+                source: (*source).to_string(),
+                at: now,
+            },
+        );
+        written += 1;
+    }
+    if written == 0 {
+        return Ok(0);
+    }
+    store
+        .roots
+        .insert(BPM_ROOT_NAME.to_string(), root.to_string());
+    store.version = BPM_STORE_VERSION;
+    store.generated_at = now;
+    save_bpm_store(&store)?;
+    Ok(written)
+}
+
+/// Every stored BPM for `root`, as absolute path → bpm — the shape the scanner
+/// wants when re-seeding the rebuilt `tracks` table.
+fn bpm_store_for_root(root: &str) -> HashMap<String, f64> {
+    let store = load_bpm_store();
+    let Some(table) = store.entries.get(BPM_ROOT_NAME) else {
+        return HashMap::new();
+    };
+    let root_path = Path::new(root);
+    table
+        .iter()
+        .map(|(rel, e)| {
+            (
+                root_path.join(rel).to_string_lossy().to_string(),
+                e.bpm,
+            )
+        })
+        .collect()
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct BpmStoreStats {
+    path: String,
+    entries: usize,
+    tapped: usize,
+    exists: bool,
+}
+
+#[tauri::command]
+fn bpm_store_stats() -> Result<BpmStoreStats, String> {
+    let path = bpm_store_path()?;
+    let store = load_bpm_store();
+    let table = store.entries.get(BPM_ROOT_NAME);
+    Ok(BpmStoreStats {
+        path: path.to_string_lossy().to_string(),
+        entries: table.map(|t| t.len()).unwrap_or(0),
+        tapped: table
+            .map(|t| t.values().filter(|e| e.source == "tap").count())
+            .unwrap_or(0),
+        exists: path.exists(),
+    })
+}
+
 /// BPM for a track, detected lazily via `aubio tempo` and cached in the DB
 /// (whole-number). Returns `Ok(Some(bpm))` once known, `Ok(None)` when it
 /// can't be determined (aubio not installed, too few beats, etc.) so the UI
@@ -1354,6 +1574,10 @@ fn track_bpm(app: AppHandle, id: i64) -> Result<Option<f64>, String> {
         Err(_) => return Ok(None),
     };
     let _ = conn.execute("UPDATE tracks SET bpm = ?1 WHERE id = ?2", params![bpm, id]);
+    // Durable copy. Best-effort: if the shared dir is unwritable we still have
+    // the DB cache, and playback must not care.
+    let root = read_music_root(&app);
+    let _ = bpm_store_put_many(&root, &[(path, bpm, "aubio")]);
     Ok(Some(bpm))
 }
 
@@ -2088,6 +2312,7 @@ pub fn run() {
             default_playlist_dir,
             library_db_path,
             track_bpm,
+            bpm_store_stats,
             library_health,
             acknowledge_files,
             audio_play,

@@ -5,6 +5,42 @@ siblings (ndisc / ndisc.view / glmps), nplay is a local player and **not** a
 participant in the ndisc Nostr wire contract, so it tracks a single axis: this
 app's own semver, below.
 
+## 0.1.0-beta.6 — unreleased
+
+### Suite-shared BPM store
+- **BPM now has a durable home outside this app's index.** `tracks.bpm` was only
+  ever a *cache*: the table is wiped and rebuilt on every scan and keyed by
+  absolute path, yet a BPM costs an aubio subprocess to earn and accrues over
+  months of listening. New suite-shared store at
+  `~/.local/share/ndisc-suite/bpm.json`, beside ndisc's `published.json`.
+  Contract: `schema/bpm-store-v1.md`.
+- **Identity is `(root, relpath)`**, per the suite's terrain/roots model — never
+  an absolute path, never a DB id. `roots` records the absolute path the named
+  root resolved to, so a consumer whose root differs can still rebuild paths.
+  A file outside the root has no stable identity and is skipped rather than
+  given an invented key.
+- **The store wins over the DB on scan.** Lose `library.db` entirely and BPM
+  comes back on the next scan. The same pass migrates any DB-only values *out*
+  to the store, so the first rescan after upgrading hands over every BPM earned
+  so far (137 here), and is a no-op thereafter.
+- **`tap` outranks `aubio`, and a detection can never overwrite a tap.** The
+  `source` field ships now even though tap-tempo doesn't exist yet: aubio has a
+  known octave-error problem, so a detection is a guess and a human tap is
+  ground truth. That distinction is the reason the store is worth having, and it
+  had to exist before the first value was written.
+- Writes are **atomic** (temp + rename — other apps read this file),
+  **batched** (per-track read-modify-write would be quadratic over a
+  library-sized backfill), and **best-effort throughout**: a store failure must
+  never break playback or a scan.
+- Readable by **nsmpl** (BPM detection is already in its backlog) without
+  coupling to nplay's schema, and by **ndisc** — which, as the app that already
+  writes tags and knows publish state, is where BPM can later be made *portable*
+  by folding it into the files. nplay deliberately does not write to library
+  files. Publishing BPM to Nostr is explicitly **out of scope**: `release.v2` is
+  frozen, so it is a contract change needing a coordinated suite wave.
+- Library health gained a **BPM section** — `bpm known` / `hand-tapped`, and the
+  store path.
+
 ## 0.1.0-beta.5 — unreleased
 
 ### Transport
