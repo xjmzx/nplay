@@ -1,5 +1,6 @@
-import { useState, type RefObject } from "react";
+import { useEffect, useState, type RefObject } from "react";
 import { Film, Maximize2, Music4 } from "lucide-react";
+import { cn } from "../lib/cn";
 import { fileSrc, videoSrc, type Album, type Track } from "../lib/tauri";
 
 interface NowPlayingProps {
@@ -36,6 +37,17 @@ export function NowPlaying({
   const [videoError, setVideoError] = useState(false);
   const showImage = cover && errored !== cover;
   const showVideo = isPlayableVideo && !!mediaBase;
+
+  // The art lags `cover` by design: on Stop, `cover` goes null but the last
+  // image stays mounted at opacity 0 so it can fade *out* rather than being
+  // yanked. It only ever gets replaced by the next cover, never cleared.
+  const [shownCover, setShownCover] = useState<string | null>(null);
+  const [coverLoaded, setCoverLoaded] = useState(false);
+  useEffect(() => {
+    if (!cover) return;
+    setShownCover(cover);
+    setCoverLoaded(false);
+  }, [cover]);
 
   const meta: string[] = [];
   if (track?.codec) meta.push(track.codec);
@@ -85,23 +97,41 @@ export function NowPlaying({
           )}
         </div>
       ) : (
-        <div className="w-full max-w-[18rem] aspect-square rounded-xl bg-surface/40 border border-surface/60 overflow-hidden flex items-center justify-center shadow-inner">
-          {showImage ? (
+        // The frame is the constant — it holds the panel's shape so stopping
+        // never collapses the layout. Everything inside cross-fades over it.
+        <div className="relative w-full max-w-[18rem] aspect-square rounded-xl bg-surface/40 border border-surface/60 overflow-hidden shadow-inner">
+          {/* Glyph = "this release has no cover art", NOT "nothing playing" —
+              the caption below already says that, so idle shows a bare frame. */}
+          <div
+            className={cn(
+              "absolute inset-0 flex items-center justify-center transition-opacity duration-500",
+              track && !showImage ? "opacity-100" : "opacity-0",
+            )}
+          >
+            {track?.isVideo ? (
+              <Film size={64} className="text-muted/40" strokeWidth={1.2} />
+            ) : (
+              <Music4 size={64} className="text-muted/40" strokeWidth={1.2} />
+            )}
+          </div>
+
+          {shownCover && (
             <img
-              src={fileSrc(cover)}
+              src={fileSrc(shownCover)}
               alt={album?.album ?? ""}
-              className="w-full h-full object-cover"
-              onError={() => setErrored(cover)}
+              onLoad={() => setCoverLoaded(true)}
+              onError={() => setErrored(shownCover)}
+              className={cn(
+                "absolute inset-0 w-full h-full object-cover transition-opacity duration-500",
+                showImage && coverLoaded ? "opacity-100" : "opacity-0",
+              )}
             />
-          ) : track?.isVideo ? (
-            <Film size={64} className="text-muted/40" strokeWidth={1.2} />
-          ) : (
-            <Music4 size={64} className="text-muted/40" strokeWidth={1.2} />
           )}
         </div>
       )}
 
-      {track ? (
+      {/* No idle caption: the empty frame says "nothing playing" on its own. */}
+      {track && (
         <div className="w-full text-center px-1">
           <div className="font-medium text-fg truncate" title={track.title}>
             {track.title}
@@ -124,8 +154,6 @@ export function NowPlaying({
             </div>
           )}
         </div>
-      ) : (
-        <div className="text-sm text-muted">Nothing playing</div>
       )}
     </div>
   );

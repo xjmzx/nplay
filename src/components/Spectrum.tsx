@@ -5,22 +5,23 @@ import { audioSpectrum } from "../lib/tauri";
  * Now-playing spectrum visualiser. The audio is decoded in Rust (rodio,
  * outside the webview), so the FFT is computed there too; we poll the bar
  * magnitudes on a rAF loop and paint them to a canvas — no React re-render
- * per frame. `active` gates the loop so we don't poll with nothing loaded.
+ * per frame.
  *
  * The bar colour is taken from the canvas's own computed `color` (set via the
  * `text-accent` class) so it tracks the suite palette.
- *
- * `synthetic` swaps the real FFT poll for a gentle looping pattern — used when
- * an mp4 video is playing (its audio is decoded by the webview, never touches
- * rodio, so there are no real magnitudes to read). Keeps the panel alive.
  */
-export function Spectrum({
-  active,
-  synthetic = false,
-}: {
-  active: boolean;
-  synthetic?: boolean;
-}) {
+export type SpectrumMode =
+  /** Audio is running through rodio — poll the real FFT. */
+  | "live"
+  /** Nothing to analyse: no track loaded, or an mp4 whose audio is decoded by
+   *  the webview and never reaches rodio. Runs the idle loop so the panel is
+   *  never a dead rectangle — this is also the state it initialises in. */
+  | "idle"
+  /** Paused with a track loaded: hold the last frame. The signal is suspended,
+   *  not absent, so neither an idle shimmer nor a blank canvas would be true. */
+  | "hold";
+
+export function Spectrum({ mode }: { mode: SpectrumMode }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
@@ -29,10 +30,8 @@ export function Spectrum({
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    if (!active) {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      return;
-    }
+    // Freeze: leave whatever is painted exactly where it is.
+    if (mode === "hold") return;
 
     let raf = 0;
     let stopped = false;
@@ -154,11 +153,17 @@ export function Spectrum({
       if (stopped) return;
       if (t - last >= 33) {
         last = t;
-        if (synthetic) {
+        if (mode === "idle") {
           draw(synth(t));
         } else {
           audioSpectrum()
-            .then(draw)
+            // Guarded: a poll still in flight when playback stops would
+            // otherwise resolve *after* teardown and paint one last frame of
+            // real signal over the idle loop — freezing a still of the audio
+            // at the moment we stopped.
+            .then((bars) => {
+              if (!stopped) draw(bars);
+            })
             .catch(() => {});
         }
       }
@@ -170,7 +175,7 @@ export function Spectrum({
       stopped = true;
       cancelAnimationFrame(raf);
     };
-  }, [active, synthetic]);
+  }, [mode]);
 
   return <canvas ref={canvasRef} className="w-full h-full text-accent" />;
 }

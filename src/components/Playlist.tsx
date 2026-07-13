@@ -22,6 +22,12 @@ import {
   type Track,
 } from "../lib/tauri";
 
+// Row rhythm. The rows are real elements (h-6) and the empty space below them
+// is a gradient, so the two have to agree or the stripes would step at the
+// last track. Keep in sync with the row's `h-6` / the surface's `gap-1`.
+const ROW_H = 24; // h-6
+const ROW_GAP = 4; // gap-1
+
 /** One-shot sort keys for the playlist (applied as a reorder, not a mode). */
 export type PlaylistSortKey = "title" | "artist" | "album" | "duration";
 
@@ -222,14 +228,15 @@ function PlaylistImpl({
         </button>
       </div>
 
-      {!tracks.length ? (
-        <div className="text-[13px] text-muted px-1 py-2">
-          Empty. Drag a release here, or add tracks from the Collection with
-          the <span className="text-fg/70">+</span> button.
-        </div>
-      ) : (
-        <div className="flex flex-col gap-0.5">
-          {tracks.map((t, i) => {
+      {/* The list surface: one continuous fill running to the bottom of the
+          section whether or not there are tracks. It never reacts to hover —
+          only the rows do, within their own bounds. Rows sit on it as lighter
+          bands, so the surface shows through between them as the stripe gap
+          (same dimensions as the Collection's artist/album fills). Below the
+          last track the stripe pattern carries on as empty ghost rows, so the
+          section reads as a list even when it holds nothing. */}
+      <div className="relative flex-1 flex flex-col gap-1 bg-bg">
+        {tracks.map((t, i) => {
             const active = t.id === currentTrackId;
             const artist = albumById.get(t.albumId)?.artist ?? "";
             const unplayable = t.playable === false;
@@ -262,8 +269,17 @@ function PlaylistImpl({
                   setOverIndex(null);
                 }}
                 className={cn(
-                  "group flex items-center gap-2 px-2 py-1 hover:bg-surface/50 text-[13px]",
-                  active && "bg-surface/70",
+                  // Fixed height so the ghost stripes below the last track
+                  // (ROW_H/ROW_GAP) land on exactly the same rhythm. h-6 +
+                  // text-sm reproduces the Collection fill exactly: a 20px
+                  // line in a 24px band, 4px apart.
+                  "group flex items-center gap-1.5 px-2 h-6 text-sm",
+                  // One opaque layer, like the Collection fills — a translucent
+                  // band over a translucent surface composites to mud.
+                  "shrink-0 transition-colors",
+                  active
+                    ? "bg-accent/20 hover:bg-accent/30"
+                    : "bg-surface hover:bg-surfaceHover",
                   dragIndex === i && "opacity-40",
                   overIndex === i &&
                     dragIndex !== null &&
@@ -291,7 +307,7 @@ function PlaylistImpl({
                   <span className="w-4 text-right text-[11px] text-muted tabular-nums shrink-0">
                     {i + 1}
                   </span>
-                  <span className="truncate min-w-0">
+                  <span className="truncate min-w-0 flex-1">
                     <span
                       className={cn(
                         missing
@@ -307,25 +323,25 @@ function PlaylistImpl({
                     </span>
                     {artist && <span className="text-muted"> · {artist}</span>}
                   </span>
+                  {missing && (
+                    <span
+                      className="shrink-0 inline-flex items-center gap-1 text-[9px] font-medium tracking-wide text-auburn border border-auburn/40 px-1 leading-tight"
+                      aria-label="Missing from library"
+                    >
+                      <Unlink size={9} /> missing
+                    </span>
+                  )}
+                  {unplayable && (
+                    <span className="shrink-0 text-[9px] font-medium tracking-wide text-auburn border border-auburn/40 px-1 leading-tight">
+                      {t.codec ?? "?"}
+                    </span>
+                  )}
+                  {t.duration != null && (
+                    <span className="text-[11px] text-muted tabular-nums shrink-0">
+                      {formatTime(t.duration)}
+                    </span>
+                  )}
                 </div>
-                {missing && (
-                  <span
-                    className="shrink-0 inline-flex items-center gap-1 text-[9px] font-medium tracking-wide text-auburn border border-auburn/40 px-1 leading-tight"
-                    aria-label="Missing from library"
-                  >
-                    <Unlink size={9} /> missing
-                  </span>
-                )}
-                {unplayable && (
-                  <span className="shrink-0 text-[9px] font-medium tracking-wide text-auburn border border-auburn/40 px-1 leading-tight">
-                    {t.codec ?? "?"}
-                  </span>
-                )}
-                {t.duration != null && (
-                  <span className="text-[11px] text-muted tabular-nums shrink-0">
-                    {formatTime(t.duration)}
-                  </span>
-                )}
                 <button
                   onClick={() => revealInFileManager(t.path).catch(() => {})}
                   title="Show in file browser"
@@ -343,8 +359,30 @@ function PlaylistImpl({
               </div>
             );
           })}
-        </div>
-      )}
+
+        {/* Ghost rows: the same fill on the same pitch, painted as a gradient
+            rather than real elements so it costs nothing and needs no height
+            measurement. Purely decorative — the real rows above are opaque
+            bands drawn over the surface, and this picks up where they stop. */}
+        <div
+          aria-hidden="true"
+          className="flex-1 min-h-0"
+          style={{
+            background: `repeating-linear-gradient(to bottom,
+              rgb(var(--c-surface)) 0 ${ROW_H}px,
+              transparent ${ROW_H}px ${ROW_H + ROW_GAP}px)`,
+          }}
+        />
+
+        {!tracks.length && (
+          <div className="absolute inset-0 flex items-start p-2 pointer-events-none">
+            <p className="text-[13px] text-muted">
+              Empty. Drag a release here, or add tracks from the Collection
+              with the <span className="text-fg/70">+</span> button.
+            </p>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

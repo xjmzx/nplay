@@ -37,11 +37,14 @@ const VIDEO_EXTS: &[&str] = &[
     "mp4", "mkv", "mov", "webm", "m4v", "avi", "wmv", "flv", "mpg", "mpeg", "ogv",
 ];
 
-// Candidate folder-cover filenames, in priority order (case-insensitive
-// stem match). First hit wins; otherwise the first image of any kind in
-// the folder, otherwise an embedded picture from the first track.
-const COVER_STEMS: &[&str] = &["cover", "folder", "front", "album", "albumart", "art"];
 const IMAGE_EXTS: &[&str] = &["jpg", "jpeg", "png", "webp", "gif", "bmp"];
+
+// Alternate art — never a front cover, even when nothing better exists.
+// Vetoed outright rather than merely ranked low, so a folder holding only a
+// `back.jpg` yields no cover and we fall through to the embedded picture.
+const COVER_NEG: &[&str] = &[
+    "back", "tray", "inlay", "inside", "booklet", "spine", "label", "obi", "disc",
+];
 
 const DEFAULT_MUSIC_ROOT: &str = "/data/music";
 
@@ -381,33 +384,110 @@ fn sniff_image_ext(data: &[u8]) -> &'static str {
     }
 }
 
-/// Find a folder cover image in `dir` (by priority stem, then any image).
+/// Score a filename stem as a likely album-front cover. Higher = more likely;
+/// 0 = never use. Kept deliberately in step with ndisc's `cover_name_score` so
+/// the two apps pick the same image for the same release.
+fn cover_name_score(stem: &str, dir_name: &str) -> u32 {
+    let stem_lc = stem.to_lowercase();
+    let dir_lc = dir_name.to_lowercase();
+
+    for tok in COVER_NEG {
+        if stem_lc == *tok
+            || stem_lc.ends_with(&format!("_{tok}"))
+            || stem_lc.ends_with(&format!("-{tok}"))
+            || stem_lc.ends_with(&format!(" {tok}"))
+            || stem_lc.starts_with(&format!("{tok}_"))
+            || stem_lc.starts_with(&format!("{tok}-"))
+            || stem_lc.starts_with(&format!("{tok} "))
+        {
+            return 0;
+        }
+    }
+    if stem_lc.contains("back cover")
+        || stem_lc.contains("back_cover")
+        || stem_lc.contains("back-cover")
+        || stem_lc.contains("disc art")
+    {
+        return 0;
+    }
+
+    match stem_lc.as_str() {
+        "cover" | "folder" | "front" => return 100,
+        "albumart" | "albumartlarge" | "albumartsmall" => return 95,
+        "art" | "artwork" => return 90,
+        _ => {}
+    }
+    if stem_lc.starts_with("cover") {
+        return 85;
+    }
+    if stem_lc.starts_with("front") {
+        return 80;
+    }
+    if stem_lc.starts_with("folder") {
+        return 75;
+    }
+    if stem_lc.starts_with("albumart") {
+        return 72;
+    }
+    if !dir_lc.is_empty() && stem_lc == dir_lc {
+        return 70;
+    }
+    if !dir_lc.is_empty() && stem_lc.contains(&dir_lc) {
+        return 60;
+    }
+    if stem_lc.contains("cover") {
+        return 50;
+    }
+    if stem_lc.contains("front") {
+        return 45;
+    }
+    0
+}
+
+/// Find a folder cover image in `dir` by score. Returns None when nothing
+/// scores — the caller then falls back to the embedded picture, which beats
+/// guessing at an unnamed image (that guess is how you end up showing a
+/// booklet scan or the back of the sleeve as the release art).
 fn folder_cover(dir: &Path) -> Option<PathBuf> {
-    let entries: Vec<PathBuf> = fs::read_dir(dir)
+    let dir_name = dir.file_name().and_then(|n| n.to_str()).unwrap_or("");
+    let images: Vec<PathBuf> = fs::read_dir(dir)
         .ok()?
         .filter_map(|e| e.ok())
         .map(|e| e.path())
         .filter(|p| p.is_file() && has_ext(p, IMAGE_EXTS))
         .collect();
-    if entries.is_empty() {
+    if images.is_empty() {
         return None;
     }
-    for want in COVER_STEMS {
-        for p in &entries {
-            let stem = p
-                .file_stem()
-                .and_then(|s| s.to_str())
-                .map(|s| s.to_ascii_lowercase())
-                .unwrap_or_default();
-            if stem == *want {
-                return Some(p.clone());
-            }
-        }
+
+    let mut scored: Vec<(u32, &PathBuf)> = images
+        .iter()
+        .map(|p| {
+            let stem = p.file_stem().and_then(|s| s.to_str()).unwrap_or("");
+            (cover_name_score(stem, dir_name), p)
+        })
+        .collect();
+    scored.sort_by(|a, b| b.0.cmp(&a.0));
+    if scored[0].0 > 0 {
+        return Some(scored[0].1.clone());
     }
-    // No named cover — fall back to the alphabetically-first image.
-    let mut all = entries;
-    all.sort();
-    all.into_iter().next()
+    None
+}
+
+/// The one unnamed image in a folder is almost certainly the cover; with
+/// several unidentified images we decline to guess (ndisc's rule). Only
+/// consulted after the embedded picture has come up empty.
+fn lone_image(dir: &Path) -> Option<PathBuf> {
+    let images: Vec<PathBuf> = fs::read_dir(dir)
+        .ok()?
+        .filter_map(|e| e.ok())
+        .map(|e| e.path())
+        .filter(|p| p.is_file() && has_ext(p, IMAGE_EXTS))
+        .collect();
+    if images.len() == 1 {
+        return images.into_iter().next();
+    }
+    None
 }
 
 /// Extract the first embedded picture from `audio_path` into the cache
@@ -562,12 +642,18 @@ fn scan_library(app: AppHandle) -> Result<ScanSummary, String> {
             let year = tracks.iter().filter_map(|t| t.year).min();
             let has_video = tracks.iter().any(|t| t.is_video);
 
-            let cover = folder_cover(&dir).or_else(|| {
-                tracks
-                    .iter()
-                    .find(|t| !t.is_video)
-                    .and_then(|t| extract_embedded_cover(&t.path, &dir, &covers))
-            });
+            // Hierarchy (matches ndisc): a folder image whose name identifies
+            // it as the front → the track's own embedded picture → a lone
+            // unnamed image. Embedded outranks an unnamed guess: it is stated
+            // by the release itself rather than inferred from a filename.
+            let cover = folder_cover(&dir)
+                .or_else(|| {
+                    tracks
+                        .iter()
+                        .find(|t| !t.is_video)
+                        .and_then(|t| extract_embedded_cover(&t.path, &dir, &covers))
+                })
+                .or_else(|| lone_image(&dir));
 
             AlbumAgg {
                 dir,

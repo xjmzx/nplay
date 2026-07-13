@@ -20,6 +20,7 @@ import {
   Shuffle,
   SkipBack,
   SkipForward,
+  Square,
   Table,
 } from "lucide-react";
 import { cn } from "./lib/cn";
@@ -32,7 +33,7 @@ import { PlayerBar } from "./components/PlayerBar";
 import { Playlist, type PlaylistSortKey } from "./components/Playlist";
 import { ScanProgressBar } from "./components/ScanProgressBar";
 import { Health, fmtAgo } from "./components/Health";
-import { Spectrum } from "./components/Spectrum";
+import { Spectrum, type SpectrumMode } from "./components/Spectrum";
 import { TableView } from "./components/TableView";
 import {
   audioPause,
@@ -619,8 +620,30 @@ export default function App() {
     }
   }, [playlist, playlistDir, albumById]);
 
+  // Stop = eject. Unloads the track and returns to the "Nothing playing" state
+  // the app opens in — the only other way out of playback is letting the queue
+  // run dry. The queue and its cursor survive, so Play picks up where it left
+  // off (from the cursor, or the top if it was detached).
+  function stop() {
+    const el = videoElRef.current;
+    if (el) {
+      el.pause();
+      el.currentTime = 0;
+    }
+    audioStop().catch(() => {});
+    setNowPlaying(null);
+    setIsPlaying(false);
+    setCurrentTime(0);
+    setDuration(0);
+  }
+
   function toggle() {
-    if (!current) return;
+    // Nothing loaded (fresh start, or just stopped) — Play re-enters the queue
+    // at the cursor rather than being a dead button.
+    if (!current) {
+      if (playlist.length) playPlaylistAt(index >= 0 ? index : 0);
+      return;
+    }
     if (currentIsPlayableVideo) {
       const el = videoElRef.current;
       if (!el) return;
@@ -782,6 +805,17 @@ export default function App() {
     playlist.length > 0 &&
     (index < 0 || repeat === "all" || shuffle || index < playlist.length - 1);
 
+  // Idle (nothing loaded — including at launch) runs the same gentle loop as a
+  // playing mp4: in both cases there is no rodio signal to read, so the panel
+  // idles rather than sitting dead. Paused holds the last frame.
+  const spectrumMode: SpectrumMode = !current
+    ? "idle"
+    : !isPlaying
+      ? "hold"
+      : currentIsPlayableVideo
+        ? "idle"
+        : "live";
+
   // Header master-transport button — matches ndisc.smpl's MasterStrip
   // styling (h-8 square, surface fill, accent glyph) for suite consistency.
   const hdrBtn =
@@ -846,7 +880,7 @@ export default function App() {
           </button>
           <button
             onClick={prev}
-            disabled={!current}
+            disabled={!current && !playlist.length}
             title="Previous"
             aria-label="Previous"
             className={hdrBtn}
@@ -855,7 +889,7 @@ export default function App() {
           </button>
           <button
             onClick={toggle}
-            disabled={!current}
+            disabled={!current && !playlist.length}
             title={isPlaying ? "Pause" : "Play"}
             aria-label={isPlaying ? "Pause" : "Play"}
             aria-pressed={isPlaying}
@@ -866,6 +900,15 @@ export default function App() {
             ) : (
               <Play size={15} fill="currentColor" />
             )}
+          </button>
+          <button
+            onClick={stop}
+            disabled={!current}
+            title="Stop"
+            aria-label="Stop"
+            className={hdrBtn}
+          >
+            <Square size={13} fill="currentColor" />
           </button>
           <button
             onClick={() => advanceRef.current(false)}
@@ -1144,7 +1187,7 @@ export default function App() {
               <div className="flex-1 min-h-0">
                 {/* Only animate while actually playing — gating on a loaded
                     track alone polled at 30fps even while paused. */}
-                <Spectrum active={isPlaying} synthetic={currentIsPlayableVideo} />
+                <Spectrum mode={spectrumMode} />
               </div>
             </Section>
           </div>

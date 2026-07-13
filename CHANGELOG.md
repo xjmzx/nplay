@@ -5,6 +5,58 @@ siblings (ndisc / ndisc.view / glmps), nplay is a local player and **not** a
 participant in the ndisc Nostr wire contract, so it tracks a single axis: this
 app's own semver, below.
 
+## 0.1.0-beta.5 — unreleased
+
+### Transport
+- **Stop.** `nowPlaying` previously had no path back to `null`: once a track was
+  loaded the only ways out were pausing or letting the queue run dry, so the
+  idle state was unreachable after launch. The backend `audio_stop` command and
+  its binding already existed — nothing in the UI called them. A Stop button now
+  ejects: it halts rodio, rewinds the `<video>`, and clears the track and the
+  time readouts, returning to the cold-start state.
+- The queue **survives** the eject, so Stop isn't a dead end — Play re-enters the
+  playlist at the cursor when nothing is loaded (it was simply disabled before),
+  and Prev is gated the same way, since it already walked the queue off `index`.
+
+### Cover art
+- **Cover resolution now matches ndisc's**, which it silently diverged from.
+  nplay checked six exact filename stems and then fell back to *the
+  alphabetically-first image in the folder* — so a release holding
+  `01-back.jpg` and `02-front.jpg` displayed the back of the sleeve. It now uses
+  ndisc's `cover_name_score` verbatim: alternate art (`back`, `tray`, `inlay`,
+  `booklet`, `spine`, `label`, `obi`, `disc`) is **vetoed** rather than ranked
+  low, and an unnamed image is never guessed at.
+- Hierarchy is **named front cover → embedded picture → lone unnamed image**.
+  Embedded outranks the unnamed guess deliberately: it is stated by the release
+  itself, where a filename is only inferred — and inferring is what produced the
+  back-cover bug. All scan-time, so playback cost is unchanged (the cover is a
+  per-release column, never polled per track). **Existing values are stale until
+  a rescan.**
+
+### Spectrum
+- **Fixed a still of the audio being frozen on screen when playback stopped.** A
+  race: `audioSpectrum().then(draw)` was unguarded, so a poll in flight at
+  teardown resolved *after* the canvas was cleared and painted one last frame of
+  real signal, with nothing left to overwrite it.
+- The `active`/`synthetic` booleans collapsed three distinct states into two.
+  Replaced by an explicit mode: **`live`** (rodio audio — poll the real FFT),
+  **`idle`** (nothing to analyse: no track loaded, *or* an mp4 whose audio the
+  webview decodes and rodio never sees — both now run the same gentle loop, and
+  it is the state the panel initialises in), and **`hold`** (paused: freeze the
+  last frame, since the signal is suspended rather than absent).
+
+### Playlist + Now playing
+- Playlist reads as a **list**: rows are striped bands on a continuous surface
+  that runs to the bottom of the section, carrying on below the last track as
+  ghost rows so an empty playlist is still visibly a list. Dimensions,
+  spacing, row height and font size now match the Collection exactly (a 20px
+  line in a 24px band, 4px apart), and the two panels no longer diverge.
+- Now playing **cross-fades** the artwork in and out over the frame. The frame
+  itself is always mounted, so stopping never collapses the layout.
+- The placeholder glyph is scoped to its one honest meaning — *this release has
+  no cover art* — and the "Nothing playing" caption is gone. Both were saying
+  "nothing playing" a second time, on top of an already-empty frame.
+
 ## 0.1.0-beta.4 — unreleased
 
 ### Library health
