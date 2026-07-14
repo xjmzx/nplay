@@ -1,4 +1,6 @@
-# ndisc.play
+<img src="docs/nplay-lockup.svg" alt="nplay" width="300">
+
+# nplay
 
 A simple local music/video player — the playback companion to the
 **ndisc** suite ([`ndisc`](https://github.com/xjmzx/ndisc),
