@@ -5,6 +5,26 @@ siblings (ndisc / ndisc.view / glmps), nplay is a local player and **not** a
 participant in the ndisc Nostr wire contract, so it tracks a single axis: this
 app's own semver, below.
 
+## 0.1.0-beta.9 — unreleased
+
+### Collection — ghost rows
+- The space below the tree now keeps the list's rhythm going instead of falling
+  away to flat panel. A hard filter (a few artists, or none at all) used to leave
+  a dead rectangle; it now carries a faint trace of the rows that would come
+  next. Same idea as the Playlist's ghost rows, and it covers the **"No matches"**
+  state, which is the sharpest version of the case.
+- It traces the **artist** row, not the release row. Collection is a tree of three
+  row types (artist = mauve, release = digital, track = bare) and a ghost can only
+  be one of them — at the bottom of the list, the next thing that would appear is
+  an artist.
+- It reproduces the artist row's **geometry**, not just its colour: the 20px
+  chevron gutter, the flexible name fill, the 36px count chip. A plain full-width
+  stripe would line up with nothing and read as a different element rather than a
+  trace of the next one.
+- Collection still has **no container background** — the crispness comes from
+  never stacking translucent fills, and the ghost is a single faint layer (mauve
+  at /5, below the real /10) rather than a surface.
+
 ## 0.1.0-beta.8 — unreleased
 
 ### BPM round trip — nplay now *reads* the store, not just writes it

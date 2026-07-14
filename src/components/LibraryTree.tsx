@@ -14,6 +14,41 @@ import { listAlbumTracks, type Album, type Track } from "../lib/tauri";
 
 export type SortKey = "artist" | "album" | "year";
 
+// Ghost artist rows — the empty space below the tree keeps the list's rhythm
+// going instead of falling away to flat panel, which is what a hard filter used
+// to leave behind. Same idea as the Playlist's ghost rows.
+//
+// Two things it has to get right or it reads as a *different* element rather
+// than a trace of the next one:
+//
+//  1. It traces the ARTIST row, not the release row. Collection is a tree of
+//     three row types (artist = mauve, release = digital, track = bare), and a
+//     ghost can only be one of them. At the bottom of the list the next thing
+//     that would appear is an artist, so mauve it is.
+//  2. It matches the artist row's GEOMETRY, not just its colour: a 20px chevron
+//     gutter (14px icon + 6px gap), the flexible name fill, then the 36px count
+//     chip. A plain full-width stripe would line up with nothing.
+//
+// Faint on purpose — the real fill is mauve/10, so a trace sits below that.
+// Pitch: 2px lead-in (the row wrapper's py-0.5) + 24px fill + 2px = 28px.
+const GHOST_FILL =
+  "repeating-linear-gradient(to bottom," +
+  "transparent 0 2px," +
+  "rgb(var(--c-mauve) / 0.05) 2px 26px," +
+  "transparent 26px 28px)";
+
+function GhostRows() {
+  return (
+    <div
+      aria-hidden="true"
+      className="flex-1 min-h-0 flex items-stretch gap-1.5 pl-5"
+    >
+      <div className="flex-1" style={{ background: GHOST_FILL }} />
+      <div className="w-9 shrink-0" style={{ background: GHOST_FILL }} />
+    </div>
+  );
+}
+
 /** mp4/m4v play with picture (h264/aac/ac3 via WebKit+libav); others audio-only. */
 const isPlayableVideo = (p: string) => /\.(mp4|m4v)$/i.test(p);
 
@@ -147,20 +182,28 @@ function LibraryTreeImpl({
 
   if (!albums.length) {
     return (
-      <div className="text-sm text-muted px-2 py-4">
-        No albums indexed yet. Scan your library to get started.
+      <div className="text-sm flex flex-col min-h-full">
+        <div className="text-muted px-2 py-4">
+          No albums indexed yet. Scan your library to get started.
+        </div>
+        <GhostRows />
       </div>
     );
   }
 
+  // "No matches" is precisely the case this exists for: a hard filter used to
+  // leave a flat, empty panel.
   if (!groups.length) {
     return (
-      <div className="text-sm text-muted px-2 py-4">No matches.</div>
+      <div className="text-sm flex flex-col min-h-full">
+        <div className="text-muted px-2 py-4">No matches.</div>
+        <GhostRows />
+      </div>
     );
   }
 
   return (
-    <div className="text-sm">
+    <div className="text-sm flex flex-col min-h-full">
       {groups.map((g) => {
         // While filtering, show matching groups expanded so hits are visible.
         const artistOpen = filtering || openArtists.has(g.artist);
@@ -356,6 +399,7 @@ function LibraryTreeImpl({
           </div>
         );
       })}
+      <GhostRows />
     </div>
   );
 }
