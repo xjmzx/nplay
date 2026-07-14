@@ -5,6 +5,39 @@ siblings (ndisc / ndisc.view / glmps), nplay is a local player and **not** a
 participant in the ndisc Nostr wire contract, so it tracks a single axis: this
 app's own semver, below.
 
+## 0.2.0-beta.1 — unreleased
+
+### Monochrome theme — and it is now the default
+
+- **New `mono` theme**, and the title now cycles **fizx → upleb → mono**.
+- **Chrome goes greyscale; MEANING keeps its colour.** Each `.theme-mono` block
+  declares *only* the greyscale tokens — anything it does not redeclare keeps its
+  `:root` value, so `ok` / `warn` / `alert` / `nostr` / `medium` (and ndisc's
+  genre + year palettes) stay coloured with no work. **The block is a list of
+  what does not mean anything.** That is the whole design.
+- The brand tokens (`accent` / `mauve` / `digital` / `auburn`) were each doing two
+  jobs. Hue was never their only carrier — hierarchy also lives in indent, fill,
+  icons and labels — so it moves onto **luminance**: `mauve` (upper tier) sits
+  brighter than `digital` (lower tier), the order the hues implied.
+- **Monochrome is the DEFAULT.** No stored choice, an unrecognised one, or no
+  localStorage at all → `mono`. An existing choice is respected; only a fresh
+  install lands there.
+- **Fixes a theme flash on every launch.** The theme class was applied in a
+  `useEffect`, which runs *after* the first paint — so each launch showed the
+  old default before the real theme landed, and on a fresh install that flash
+  *was* the user's first impression. It is now set pre-render by an inline script
+  in `index.html`, with a `catch` that falls back to mono if storage throws.
+
+### nplay finally has a theme switch
+
+- nplay had `.theme-upleb` in its CSS and **no switch wiring at all** — the theme
+  was defined and unreachable, the only app in the suite like that. It now has
+  the same three-way title toggle as its siblings.
+- `auburn` stays **coloured** here, unlike the other apps: in nplay it marks
+  unplayable / missing files, and in TableView's playable dot (`bg-ok` vs
+  `bg-auburn`, no text beside it) **hue is the only channel**. Grey it and the
+  information is gone.
+
 ## 0.1.0-beta.9 — unreleased
 
 ### Collection — ghost rows

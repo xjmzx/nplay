@@ -38,6 +38,54 @@
   --c-auburn: 178 96 58;
 }
 
+/* ── Monochrome ─────────────────────────────────────────────────────────────
+   Chrome goes greyscale; MEANING keeps its colour. That split is the whole
+   theme, and it is not cosmetic: this app uses hue semantically in places where
+   nothing else carries the signal.
+
+   GREYSCALE — surfaces, text, and the three overloaded brand tokens:
+
+     accent   was the primary button AND the "this is playing" marker
+     mauve    was the artist-row tint AND the BPM value
+     digital  was the release-row tint AND "this video plays with picture"
+
+   Each was doing two jobs, so they cannot simply be dropped. What saves them is
+   that hue was never the SOLE carrier: artist/release/track already differ by
+   indent and fill, now-playing already has a fill band and a Music2 icon, and a
+   picture-playable video already has a Film icon. So the hierarchy moves onto
+   LUMINANCE — mauve (artist) sits brighter than digital (release), exactly the
+   order the hues implied — and the icons keep doing what they were already doing.
+
+   KEPT IN COLOUR — ok / warn / alert / auburn. These are status, and hue is the
+   fast channel for status. In the one place it is the ONLY channel (TableView's
+   playable dot: bg-ok vs bg-auburn, no text beside it) removing it would delete
+   the information outright.
+
+   Deliberately NOT muted to "tasteful grey-green": a monochrome theme that
+   dulls its warnings has misunderstood which half is decoration. */
+.theme-mono {
+  --c-bg: 10 10 11;
+  --c-panel: 16 16 18;
+  --c-surface: 28 28 31;
+  --c-surface-hover: 44 44 48;
+  --c-fg: 240 240 243;
+  --c-muted: 122 122 128;
+
+  /* Brand/structure → greyscale. Accent is the brightest interactive tone, so
+     `bg-accent text-bg` still reads as a primary button. */
+  --c-accent: 232 232 236;
+  /* Artist tier — brighter than release, preserving the hierarchy hue carried. */
+  --c-mauve: 198 198 204;
+  /* Release tier. */
+  --c-digital: 152 152 159;
+
+  /* Semantic — unchanged, on purpose. */
+  --c-ok: 74 222 128;
+  --c-warn: 251 191 36;
+  --c-alert: 248 113 113;
+  --c-auburn: 178 96 58;
+}
+
 html,
 body,
 #root {

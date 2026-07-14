@@ -65,6 +65,20 @@ import {
 import { buildXspf, parseXspf, type XspfItem } from "./lib/xspf";
 
 const VOLUME_KEY = "nplay.volume";
+const THEME_KEY = "nplay.theme";
+
+/** nplay had `.theme-upleb` in its CSS and NO switch — the theme was defined and
+ *  unreachable, the only app in the suite like that. Adds the switch, and a
+ *  third theme: monochrome, where chrome goes greyscale and the semantic colours
+ *  (ok / warn / alert / auburn) deliberately do not. */
+type Theme = "fizx" | "upleb" | "mono";
+
+function loadTheme(): Theme {
+  const v = localStorage.getItem(THEME_KEY);
+  // Default = mono, like the rest of the suite. An existing choice is
+  // respected; only a fresh install lands here.
+  return v === "upleb" || v === "fizx" ? v : "mono";
+}
 const PLAYLIST_KEY = "nplay.playlist";
 const REPEAT_KEY = "nplay.repeat";
 const SHUFFLE_KEY = "nplay.shuffle";
@@ -183,6 +197,14 @@ export default function App() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
+  const [theme, setTheme] = useState<Theme>(loadTheme);
+  useEffect(() => {
+    const root = document.documentElement.classList;
+    root.toggle("theme-upleb", theme === "upleb");
+    root.toggle("theme-mono", theme === "mono");
+    localStorage.setItem(THEME_KEY, theme);
+  }, [theme]);
+
   const [volume, setVolume] = useState(() => {
     const s = localStorage.getItem(VOLUME_KEY);
     const v = s != null ? parseFloat(s) : NaN;
@@ -851,8 +873,20 @@ export default function App() {
         <div className="flex items-center gap-3 min-w-0">
           <Music size={18} className="text-accent shrink-0" />
           <h1 className="text-2xl font-bold tracking-tight leading-none shrink-0">
-            <span className="text-accent">n</span>
-            <span className="text-mauve">play</span>
+            <button
+              type="button"
+              onClick={() =>
+                setTheme((t) =>
+                  t === "fizx" ? "upleb" : t === "upleb" ? "mono" : "fizx",
+                )
+              }
+              title={`Theme: ${theme} — click to cycle (fizx → upleb → mono)`}
+              aria-label={`Theme: ${theme}. Click to cycle.`}
+              className="cursor-pointer"
+            >
+              <span className="text-accent">n</span>
+              <span className="text-mauve">play</span>
+            </button>
           </h1>
           {appVersion && (
             <span className="hidden md:inline-flex items-center px-2 py-1 bg-surface text-mauve font-mono text-[11px] shrink-0">
