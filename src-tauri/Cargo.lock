@@ -2384,7 +2384,7 @@ dependencies = [
 
 [[package]]
 name = "nplay"
-version = "0.1.0-beta.9"
+version = "0.2.0-beta.1"
 dependencies = [
  "lofty",
  "percent-encoding",
