@@ -80,6 +80,7 @@ function loadTheme(): Theme {
   return v === "upleb" || v === "fizx" ? v : "mono";
 }
 const PLAYLIST_KEY = "nplay.playlist";
+const PLAYLIST_SORT_KEY = "nplay.playlist.sort";
 const REPEAT_KEY = "nplay.repeat";
 const SHUFFLE_KEY = "nplay.shuffle";
 
@@ -141,6 +142,60 @@ async function resolveEntries(
   return entries.map((e, i) => byPath.get(e.path) ?? synthTrack(e, i));
 }
 
+/** Comparator for a playlist sort view. Album metadata (artist, album,
+ *  disc/track no) is resolved through albumById; ties fall through to a
+ *  disc/track/title order so an album sort reads in play order. */
+function makePlaylistCmp(
+  key: PlaylistSortKey,
+  albumById: Map<number, Album>,
+): (a: Track, b: Track) => number {
+  const meta = (t: Track) => albumById.get(t.albumId);
+  const byAlbumTrack = (a: Track, b: Track) =>
+    (a.discNo ?? 0) - (b.discNo ?? 0) ||
+    (a.trackNo ?? 0) - (b.trackNo ?? 0) ||
+    a.title.localeCompare(b.title);
+  return (a, b) => {
+    switch (key) {
+      case "title":
+        return a.title.localeCompare(b.title);
+      case "duration":
+        return (a.duration ?? 0) - (b.duration ?? 0);
+      case "artist":
+        return (
+          (meta(a)?.artist ?? "").localeCompare(meta(b)?.artist ?? "") ||
+          (meta(a)?.album ?? "").localeCompare(meta(b)?.album ?? "") ||
+          byAlbumTrack(a, b)
+        );
+      case "album":
+        return (
+          (meta(a)?.album ?? "").localeCompare(meta(b)?.album ?? "") ||
+          byAlbumTrack(a, b)
+        );
+    }
+  };
+}
+
+/** Present the canonical manual order through an optional sort view. Returns
+ *  the display tracks plus `toManual`, mapping each display row back to its
+ *  index in `manual` — so a per-row edit (remove) under an active sort targets
+ *  the right manual entry even with duplicate tracks. `key === null` is the
+ *  Manual view: the manual order verbatim. The sort is stable (ties keep manual
+ *  order) so it never scrambles equal keys. */
+function derivePlaylistView(
+  manual: Track[],
+  key: PlaylistSortKey | null,
+  albumById: Map<number, Album>,
+): { tracks: Track[]; toManual: number[] } {
+  if (!key) return { tracks: manual, toManual: manual.map((_, i) => i) };
+  const cmp = makePlaylistCmp(key, albumById);
+  const decorated = manual.map((t, i) => ({ t, i }));
+  decorated.sort((a, b) => cmp(a.t, b.t) || a.i - b.i);
+  return {
+    tracks: decorated.map((d) => d.t),
+    toManual: decorated.map((d) => d.i),
+  };
+}
+
 /** A boolean persisted to localStorage (panel collapse states). */
 function usePersistedBool(key: string, def = false) {
   const [v, setV] = useState(() => {
@@ -174,7 +229,14 @@ export default function App() {
   // The playlist IS the play queue: `index` points at the track playing
   // within it. Building a list (add / load) and playing it are the same list,
   // so there's no separate ephemeral queue to mirror.
-  const [playlist, setPlaylist] = useState<Track[]>([]);
+  //
+  // `manualOrder` is the canonical, drag-curated, persisted sequence.
+  // `sortKey` selects a transient sort *view* over it (null = Manual, the raw
+  // curated order). Sorting never mutates `manualOrder`, so switching back to
+  // Manual always restores exactly what the user arranged. The played/shown
+  // `playlist` is derived from the two just below, once `albumById` exists.
+  const [manualOrder, setManualOrder] = useState<Track[]>([]);
+  const [sortKey, setSortKey] = useState<PlaylistSortKey | null>(null);
   const [index, setIndex] = useState(-1);
   const [repeat, setRepeat] = useState<RepeatMode>(() => {
     const s = localStorage.getItem(REPEAT_KEY);
@@ -233,6 +295,16 @@ export default function App() {
   }, [albums]);
   const currentAlbum = current ? albumById.get(current.albumId) ?? null : null;
 
+  // The played + displayed queue: the manual order seen through the active
+  // sort view. `plToManual[displayIndex]` is the row's slot in `manualOrder`,
+  // so a per-row edit under a sort still targets the right manual entry. All
+  // playback reads (advance, playableSeq, index) run against this derived
+  // order, so playback follows what the user sees.
+  const { tracks: playlist, toManual: plToManual } = useMemo(
+    () => derivePlaylistView(manualOrder, sortKey, albumById),
+    [manualOrder, sortKey, albumById],
+  );
+
   // BPM for the current track — reset on track change, then filled in lazily.
   // Carries its `source`, so the UI can tell a machine guess (aubio) from a
   // tempo a human asserted in nsmpl.
@@ -290,20 +362,21 @@ export default function App() {
       // vanished fall back to synthesized tracks (negative id → shown muted +
       // swept by the broom), and any that reappeared re-link to real tracks.
       // Order/length are preserved, so the play position stays valid.
-      if (playlist.length) {
+      if (manualOrder.length) {
         const reresolved = await resolveEntries(
-          playlist.map((t) => ({
+          manualOrder.map((t) => ({
             path: t.path,
             title: t.title,
             duration: t.duration,
           })),
         );
-        setPlaylist(reresolved);
+        setManualOrder(reresolved);
         // Keep the up-next cursor on the playing track across the rebuild
-        // (matched by path — ids may be reassigned). nowPlaying is left as-is
-        // so the current track is never interrupted by a scan.
+        // (matched by path — ids may be reassigned), through the active sort
+        // view. nowPlaying is left as-is so the track is never interrupted.
         if (nowPlaying) {
-          setIndex(reresolved.findIndex((t) => t.path === nowPlaying.path));
+          const view = derivePlaylistView(reresolved, sortKey, albumById).tracks;
+          setIndex(view.findIndex((t) => t.path === nowPlaying.path));
         }
       }
       // The scan can finish in a second or two; hold a full "done" bar briefly
@@ -417,14 +490,18 @@ export default function App() {
   const play = useCallback((tracks: Track[], startIndex: number) => {
     if (!tracks.length) return;
     const i = Math.max(0, Math.min(startIndex, tracks.length - 1));
-    setPlaylist(tracks);
+    setManualOrder(tracks);
+    setSortKey(null); // a fresh selection defines its own manual order
     setIndex(i);
     setNowPlaying(tracks[i]);
   }, []);
 
   // --- playlist (the live play queue) --------------------------------------
   const addToPlaylist = useCallback((tracks: Track[]) => {
-    setPlaylist((p) => [...p, ...tracks]);
+    // Append to the canonical manual order. Under an active sort the new rows
+    // slot into their sorted place in the derived view; the up-next cursor is
+    // refreshed by the next view-changing edit (in Manual view it's unmoved).
+    setManualOrder((m) => [...m, ...tracks]);
   }, []);
   const playPlaylistAt = useCallback(
     (i: number) => {
@@ -437,43 +514,49 @@ export default function App() {
   );
   const removeFromPlaylist = useCallback(
     (i: number) => {
-      const next = playlist.filter((_, j) => j !== i);
-      setPlaylist(next);
-      // The cursor follows the playing track to its new slot (or detaches to
-      // -1 if its row was the one removed) — playback itself is untouched.
-      setIndex(nowPlaying ? next.findIndex((t) => t.id === nowPlaying.id) : -1);
+      // `i` indexes the displayed order; map it back to the manual slot so the
+      // right entry is removed even under a sort (and with duplicate tracks).
+      const manualIdx = plToManual[i];
+      if (manualIdx == null) return;
+      const nextManual = manualOrder.filter((_, j) => j !== manualIdx);
+      setManualOrder(nextManual);
+      // The cursor follows the playing track to its new slot in the view (or
+      // detaches to -1 if its row was the one removed) — playback is untouched.
+      const view = derivePlaylistView(nextManual, sortKey, albumById).tracks;
+      setIndex(nowPlaying ? view.findIndex((t) => t.id === nowPlaying.id) : -1);
     },
-    [playlist, nowPlaying],
+    [manualOrder, plToManual, sortKey, albumById, nowPlaying],
   );
   const clearPlaylist = useCallback(() => {
     // Playback is independent of the queue: Clear empties the up-next list but
     // never interrupts the current track. Keep the playing track as the sole
     // remaining row (it still shows + anchors prev/next); fully empty + stop
-    // only when nothing is playing.
+    // only when nothing is playing. Either way, drop back to the Manual view.
+    setSortKey(null);
     if (nowPlaying) {
-      setPlaylist([nowPlaying]);
+      setManualOrder([nowPlaying]);
       setIndex(0);
-      if (shuffle) setOrder(makeShuffleOrder(1, 0));
       return;
     }
-    setPlaylist([]);
+    setManualOrder([]);
     setIndex(-1);
     audioStop().catch(() => {});
     if (videoElRef.current) videoElRef.current.pause();
-  }, [nowPlaying, shuffle]);
+  }, [nowPlaying]);
 
-  // Bulk-prune the playlist by a keep-predicate, re-pointing `index` at the
-  // track that was playing (the shuffle `order` self-heals via the
-  // [shuffle, playlist.length] effect). Backs the toolbar cleanup actions.
+  // Bulk-prune the playlist by a keep-predicate. The predicate is value-based,
+  // so it filters the canonical manual order directly; the sort view and the
+  // shuffle `order` re-derive. Backs the toolbar cleanup actions.
   const prunePlaylist = useCallback(
     (keep: (t: Track) => boolean) => {
-      const kept = playlist.filter(keep);
-      setPlaylist(kept);
-      // Re-point the cursor at the playing track's new slot (-1 if it was
-      // itself pruned); playback continues regardless.
-      setIndex(nowPlaying ? kept.findIndex((t) => t.id === nowPlaying.id) : -1);
+      const nextManual = manualOrder.filter(keep);
+      setManualOrder(nextManual);
+      // Re-point the cursor at the playing track's new slot in the view (-1 if
+      // it was itself pruned); playback continues regardless.
+      const view = derivePlaylistView(nextManual, sortKey, albumById).tracks;
+      setIndex(nowPlaying ? view.findIndex((t) => t.id === nowPlaying.id) : -1);
     },
-    [playlist, nowPlaying],
+    [manualOrder, sortKey, albumById, nowPlaying],
   );
   // "Unavailable" = can't contribute real playback from the library: either an
   // undecodable format (playable === false) or an entry that no longer matches
@@ -491,60 +574,32 @@ export default function App() {
     });
   }, [prunePlaylist]);
 
-  // Reorder the playlist (sort or drag-drop): keep the highlight on the track
-  // that's playing and, when shuffling, rebuild the shuffle order around its
-  // new slot (the [shuffle, playlist.length] effect only fires on resize, so a
-  // same-length reorder must regenerate `order` here).
-  const applyReorder = useCallback(
-    (next: Track[]) => {
-      setPlaylist(next);
-      const nidx = nowPlaying
-        ? next.findIndex((t) => t.id === nowPlaying.id)
-        : -1;
-      setIndex(nidx);
-      if (shuffle) setOrder(makeShuffleOrder(next.length, nidx));
-    },
-    [nowPlaying, shuffle],
-  );
+  // Drag-drop reorder: the move is expressed over the displayed rows, and the
+  // result becomes the new manual order — so dragging while a sort is active
+  // commits that exact arrangement and drops back to the Manual view. The
+  // shuffle `order` re-derives via the [shuffle, playlist] effect below.
   const reorderPlaylist = useCallback(
     (from: number, to: number) => {
       if (from === to) return;
       const next = playlist.slice();
       const [moved] = next.splice(from, 1);
       next.splice(to, 0, moved);
-      applyReorder(next);
+      setManualOrder(next);
+      setSortKey(null);
+      setIndex(nowPlaying ? next.findIndex((t) => t.id === nowPlaying.id) : -1);
     },
-    [playlist, applyReorder],
+    [playlist, nowPlaying],
   );
+  // Sort is a non-destructive view over the manual order: `null` restores the
+  // curated Manual order, any key sorts for display without touching
+  // `manualOrder`, so switching back to Manual is always exact.
   const sortPlaylist = useCallback(
-    (key: PlaylistSortKey) => {
-      const meta = (t: Track) => albumById.get(t.albumId);
-      const byAlbumTrack = (a: Track, b: Track) =>
-        (a.discNo ?? 0) - (b.discNo ?? 0) ||
-        (a.trackNo ?? 0) - (b.trackNo ?? 0) ||
-        a.title.localeCompare(b.title);
-      const cmp = (a: Track, b: Track): number => {
-        switch (key) {
-          case "title":
-            return a.title.localeCompare(b.title);
-          case "duration":
-            return (a.duration ?? 0) - (b.duration ?? 0);
-          case "artist":
-            return (
-              (meta(a)?.artist ?? "").localeCompare(meta(b)?.artist ?? "") ||
-              (meta(a)?.album ?? "").localeCompare(meta(b)?.album ?? "") ||
-              byAlbumTrack(a, b)
-            );
-          case "album":
-            return (
-              (meta(a)?.album ?? "").localeCompare(meta(b)?.album ?? "") ||
-              byAlbumTrack(a, b)
-            );
-        }
-      };
-      applyReorder(playlist.slice().sort(cmp));
+    (key: PlaylistSortKey | null) => {
+      setSortKey(key);
+      const view = derivePlaylistView(manualOrder, key, albumById).tracks;
+      setIndex(nowPlaying ? view.findIndex((t) => t.id === nowPlaying.id) : -1);
     },
-    [playlist, albumById, applyReorder],
+    [manualOrder, albumById, nowPlaying],
   );
 
   // Auto-persist the working playlist by path, and restore it on launch
@@ -557,7 +612,17 @@ export default function App() {
         const raw = localStorage.getItem(PLAYLIST_KEY);
         const entries = raw ? (JSON.parse(raw) as SavedEntry[]) : [];
         if (Array.isArray(entries) && entries.length) {
-          setPlaylist(await resolveEntries(entries));
+          setManualOrder(await resolveEntries(entries));
+        }
+        // Restore the sort view too, so a relaunch reopens on the same order.
+        const savedSort = localStorage.getItem(PLAYLIST_SORT_KEY);
+        if (
+          savedSort === "title" ||
+          savedSort === "artist" ||
+          savedSort === "album" ||
+          savedSort === "duration"
+        ) {
+          setSortKey(savedSort);
         }
       } catch (e) {
         console.error("playlist restore failed", e);
@@ -569,15 +634,21 @@ export default function App() {
       .catch(() => {});
   }, []);
 
+  // Persist the canonical manual order (never the transient sort view) so the
+  // curated arrangement always comes back on launch.
   useEffect(() => {
     if (!hydratedRef.current) return;
-    const entries: SavedEntry[] = playlist.map((t) => ({
+    const entries: SavedEntry[] = manualOrder.map((t) => ({
       path: t.path,
       title: t.title,
       duration: t.duration,
     }));
     localStorage.setItem(PLAYLIST_KEY, JSON.stringify(entries));
-  }, [playlist]);
+  }, [manualOrder]);
+  useEffect(() => {
+    if (!hydratedRef.current) return;
+    localStorage.setItem(PLAYLIST_SORT_KEY, sortKey ?? "");
+  }, [sortKey]);
 
   // Persist the play modes.
   useEffect(() => {
@@ -587,13 +658,15 @@ export default function App() {
     localStorage.setItem(SHUFFLE_KEY, shuffle ? "1" : "0");
   }, [shuffle]);
 
-  // (Re)build the shuffle order when shuffle turns on or the list resizes,
-  // keeping the current track at the front. Deliberately not keyed on `index`
+  // (Re)build the shuffle order when shuffle turns on or the displayed order
+  // changes (resize, sort, reorder, manual restore), keeping the current track
+  // at the front. Keyed on `playlist` (not just its length) so a same-length
+  // re-sort still refreshes the permutation. Deliberately not keyed on `index`
   // (a track change shouldn't reshuffle); reading it here is fine.
   useEffect(() => {
     if (shuffle) setOrder(makeShuffleOrder(playlist.length, index));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [shuffle, playlist.length]);
+  }, [shuffle, playlist]);
 
   function cycleRepeat() {
     setRepeat((r) => (r === "off" ? "all" : r === "all" ? "one" : "off"));
@@ -611,7 +684,8 @@ export default function App() {
     if (typeof picked !== "string" || !picked) return;
     try {
       const items = parseXspf(await readTextFile(picked));
-      setPlaylist(await resolveEntries(items));
+      setManualOrder(await resolveEntries(items));
+      setSortKey(null); // an opened file is its own fresh manual order
       // Opening a playlist replaces the up-next queue but must NOT interrupt
       // what's playing (audio or video). Detach the cursor (index → -1) and
       // leave nowPlaying untouched, so the current track plays to its end; when
@@ -1184,6 +1258,7 @@ export default function App() {
                 onRemoveDuplicates={removeDuplicatesFromPlaylist}
                 onReorder={reorderPlaylist}
                 onSort={sortPlaylist}
+                sortKey={sortKey}
                 onAdd={addToPlaylist}
               />
             </div>

@@ -13,7 +13,7 @@ import {
   X,
 } from "lucide-react";
 import { cn } from "../lib/cn";
-import { COLLECTION_DND, type CollectionDrag } from "../lib/dnd";
+import { COLLECTION_DND, PLAYLIST_DND, type CollectionDrag } from "../lib/dnd";
 import { formatTime } from "../lib/format";
 import {
   listAlbumTracks,
@@ -28,7 +28,8 @@ import {
 const ROW_H = 24; // h-6
 const ROW_GAP = 4; // gap-1
 
-/** One-shot sort keys for the playlist (applied as a reorder, not a mode). */
+/** Sort views for the playlist — a non-destructive presentation over the
+ *  manual (curated) order; `null` (Manual) shows the curated order itself. */
 export type PlaylistSortKey = "title" | "artist" | "album" | "duration";
 
 const SORT_OPTIONS: [PlaylistSortKey, string][] = [
@@ -57,8 +58,10 @@ interface PlaylistProps {
   onRemoveDuplicates: () => void;
   /** Move a track from one row to another (drag-drop reorder). */
   onReorder: (from: number, to: number) => void;
-  /** Sort the whole list by a key (one-shot reorder). */
-  onSort: (key: PlaylistSortKey) => void;
+  /** Select a sort view; `null` restores the manual (curated) order. */
+  onSort: (key: PlaylistSortKey | null) => void;
+  /** Active sort view, or `null` for the manual (drag-curated) order. */
+  sortKey: PlaylistSortKey | null;
   /** Append tracks dropped in from the Collection (release or single track). */
   onAdd: (tracks: Track[]) => void;
 }
@@ -80,6 +83,7 @@ function PlaylistImpl({
   onRemoveDuplicates,
   onReorder,
   onSort,
+  sortKey,
   onAdd,
 }: PlaylistProps) {
   // Unavailable = undecodable format OR no longer in the collection (an
@@ -122,8 +126,9 @@ function PlaylistImpl({
         dropActive && "ring-1 ring-inset ring-accent/60 bg-accent/5",
       )}
       onDragOver={(e) => {
-        // Only external Collection drags — internal row reorder is handled on
-        // the rows themselves (it carries no dataTransfer payload).
+        // Only external Collection drags light up the panel dropzone; the
+        // internal row reorder (PLAYLIST_DND) is handled on the rows
+        // themselves and must not trigger the Collection "add" path.
         if (!e.dataTransfer.types.includes(COLLECTION_DND)) return;
         e.preventDefault();
         e.dataTransfer.dropEffect = "copy";
@@ -150,10 +155,19 @@ function PlaylistImpl({
           <button
             onClick={() => setSortOpen((o) => !o)}
             disabled={!tracks.length}
-            title="Sort playlist"
+            title={
+              sortKey
+                ? `Sorted by ${sortKey} — open to change or restore manual order`
+                : "Sort playlist"
+            }
             aria-haspopup="menu"
             aria-expanded={sortOpen}
-            className="text-muted hover:text-accent disabled:opacity-40 transition-colors"
+            className={cn(
+              "disabled:opacity-40 transition-colors",
+              // Tinted while a sort view is active so it's clear the shown
+              // order isn't the manual one.
+              sortKey ? "text-accent" : "text-muted hover:text-accent",
+            )}
           >
             <ArrowDownUp size={14} />
           </button>
@@ -167,15 +181,36 @@ function PlaylistImpl({
                 role="menu"
                 className="absolute right-0 top-full mt-1 z-20 flex flex-col border border-surface bg-panel py-1 text-[12px] shadow-lg"
               >
+                {/* Manual (curated) order — restores the drag order; a sort is
+                    just a view, so this is always an exact round-trip. */}
+                <button
+                  role="menuitemradio"
+                  aria-checked={sortKey === null}
+                  onClick={() => {
+                    onSort(null);
+                    setSortOpen(false);
+                  }}
+                  className={cn(
+                    "px-3 py-1 text-left whitespace-nowrap transition-colors hover:bg-surface/60 hover:text-accent",
+                    sortKey === null ? "text-accent" : "text-fg/80",
+                  )}
+                >
+                  Manual
+                </button>
+                <div className="my-1 h-px bg-surface" role="separator" />
                 {SORT_OPTIONS.map(([key, label]) => (
                   <button
                     key={key}
-                    role="menuitem"
+                    role="menuitemradio"
+                    aria-checked={sortKey === key}
                     onClick={() => {
                       onSort(key);
                       setSortOpen(false);
                     }}
-                    className="px-3 py-1 text-left whitespace-nowrap text-fg/80 hover:bg-surface/60 hover:text-accent transition-colors"
+                    className={cn(
+                      "px-3 py-1 text-left whitespace-nowrap transition-colors hover:bg-surface/60 hover:text-accent",
+                      sortKey === key ? "text-accent" : "text-fg/80",
+                    )}
                   >
                     {label}
                   </button>
@@ -250,6 +285,12 @@ function PlaylistImpl({
                 draggable
                 onDragStart={(e) => {
                   setDragIndex(i);
+                  // WebKit2GTK (Tauri's Linux webview) only fires
+                  // dragover/drop when dragstart populates the DataTransfer,
+                  // so set a payload even though the from-index lives in
+                  // state. A distinct MIME keeps the panel's Collection
+                  // dropzone from treating this as an external add.
+                  e.dataTransfer.setData(PLAYLIST_DND, String(i));
                   e.dataTransfer.effectAllowed = "move";
                 }}
                 onDragOver={(e) => {
