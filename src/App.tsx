@@ -5,7 +5,7 @@ import {
   AudioLines,
   Film,
   FolderOpen,
-  LayoutGrid,
+  Home,
   ListMusic,
   ListPlus,
   Loader2,
@@ -1028,12 +1028,12 @@ export default function App() {
           <div className="inline-flex gap-1">
             <button
               onClick={() => setView("library")}
-              title="Player"
-              aria-label="Player"
+              title="Home — player"
+              aria-label="Home"
               aria-pressed={view === "library"}
               className={modeBtn(view === "library")}
             >
-              <LayoutGrid size={15} />
+              <Home size={15} />
             </button>
             <button
               onClick={() => setView("table")}
