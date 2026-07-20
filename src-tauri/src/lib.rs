@@ -206,7 +206,108 @@ fn open(app: &AppHandle) -> Result<Connection, String> {
     );
     // Migrate DBs created before `bpm` existed (populated lazily on play).
     let _ = conn.execute("ALTER TABLE tracks ADD COLUMN bpm REAL", []);
+    // Label / catalog are enrichment joined from ndisc's catalogue export, not
+    // read from the files — only ~28% of them carry a label tag, where ndisc has
+    // it for ~77% of the catalogue. Populated by apply_catalogue().
+    let _ = conn.execute("ALTER TABLE albums ADD COLUMN label TEXT", []);
+    let _ = conn.execute("ALTER TABLE albums ADD COLUMN catalog TEXT", []);
     Ok(conn)
+}
+
+// ---- ndisc catalogue enrichment (read-only) --------------------------------
+//
+// `~/.local/share/ndisc-suite/catalogue.json`, exported by ndisc: the whole
+// catalogue keyed by release folder. nplay joins it onto `albums.dir` to get
+// label / catalog. Read-only — ndisc owns this data; we cache it on our own rows
+// so the library filters by label offline, with no relay round-trip. (Sibling of
+// published.json, which means something different: what ndisc has *published*.)
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CatalogueRelease {
+    dir: String,
+    #[serde(default)]
+    label: Option<String>,
+    #[serde(default)]
+    catalog: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CatalogueManifest {
+    #[serde(default)]
+    releases: Vec<CatalogueRelease>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LabelCount {
+    name: String,
+    albums: i64,
+}
+
+fn catalogue_path() -> Result<PathBuf, String> {
+    Ok(suite_shared_dir()?.join("catalogue.json"))
+}
+
+/// Join ndisc's catalogue onto our albums by folder. Returns how many albums
+/// matched. A missing manifest is not an error — the columns just stay null and
+/// the label filter is simply empty.
+fn apply_catalogue(conn: &Connection) -> Result<usize, String> {
+    let raw = match fs::read_to_string(catalogue_path()?) {
+        Ok(s) => s,
+        Err(_) => return Ok(0),
+    };
+    let manifest: CatalogueManifest =
+        serde_json::from_str(&raw).map_err(|e| format!("catalogue.json: {e}"))?;
+    // ONE transaction for the whole join. Left unbatched, ~2.4k individual
+    // UPDATEs each commit (and fsync) on their own, which costs seconds on every
+    // library load; batched it is milliseconds.
+    let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+    let mut matched = 0usize;
+    {
+        let mut stmt = tx
+            .prepare("UPDATE albums SET label = ?1, catalog = ?2 WHERE dir = ?3")
+            .map_err(|e| e.to_string())?;
+        for r in &manifest.releases {
+            matched += stmt
+                .execute(params![r.label, r.catalog, r.dir])
+                .map_err(|e| e.to_string())?;
+        }
+    }
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(matched)
+}
+
+/// Re-pull labels from ndisc's catalogue export without a full rescan — use
+/// after re-exporting the manifest from ndisc.
+#[tauri::command]
+fn refresh_catalogue(app: AppHandle) -> Result<usize, String> {
+    let conn = open(&app)?;
+    apply_catalogue(&conn)
+}
+
+/// Distinct labels present in the library, with album counts — powers the filter.
+#[tauri::command]
+fn list_labels(app: AppHandle) -> Result<Vec<LabelCount>, String> {
+    let conn = open(&app)?;
+    let mut stmt = conn
+        .prepare(
+            "SELECT label, COUNT(*) FROM albums
+              WHERE label IS NOT NULL AND TRIM(label) <> ''
+              GROUP BY label ORDER BY label COLLATE NOCASE",
+        )
+        .map_err(|e| e.to_string())?;
+    let rows = stmt
+        .query_map([], |r| {
+            Ok(LabelCount {
+                name: r.get(0)?,
+                albums: r.get(1)?,
+            })
+        })
+        .map_err(|e| e.to_string())?;
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())
 }
 
 #[derive(Serialize)]
@@ -792,6 +893,10 @@ fn scan_library(app: AppHandle) -> Result<ScanSummary, String> {
             .to_string(),
     );
 
+    // Enrich the freshly-indexed albums with ndisc's label / catalog. Best
+    // effort: a missing or stale export must never fail a scan.
+    let _ = apply_catalogue(&conn);
+
     let _ = app.emit(
         "scan-progress",
         ScanProgress { phase: "done".into(), done: total, total, path: String::new() },
@@ -845,6 +950,8 @@ struct AlbumRow {
     track_count: i64,
     has_video: bool,
     cover_path: Option<String>,
+    /// Joined from ndisc's catalogue export (null when unmatched/unset).
+    label: Option<String>,
 }
 
 #[tauri::command]
@@ -852,7 +959,7 @@ fn list_albums(app: AppHandle) -> Result<Vec<AlbumRow>, String> {
     let conn = open(&app)?;
     let mut stmt = conn
         .prepare(
-            "SELECT id, artist, album, year, track_count, has_video, cover_path
+            "SELECT id, artist, album, year, track_count, has_video, cover_path, label
              FROM albums
              ORDER BY artist COLLATE NOCASE, year, album COLLATE NOCASE",
         )
@@ -867,6 +974,7 @@ fn list_albums(app: AppHandle) -> Result<Vec<AlbumRow>, String> {
                 track_count: r.get(4)?,
                 has_video: r.get::<_, i64>(5)? != 0,
                 cover_path: r.get(6)?,
+                label: r.get(7)?,
             })
         })
         .map_err(|e| e.to_string())?;
@@ -2383,6 +2491,8 @@ pub fn run() {
             tracks_by_paths,
             library_stats,
             list_all_tracks,
+            refresh_catalogue,
+            list_labels,
             set_track_field,
             read_text_file,
             write_text_file,

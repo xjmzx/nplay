@@ -48,6 +48,9 @@ import {
   libraryDbPath,
   libraryStats,
   listAlbums,
+  listLabels,
+  refreshCatalogue,
+  type LabelCount,
   mediaBase,
   onScanProgress,
   readTextFile,
@@ -221,6 +224,9 @@ export default function App() {
   // Bumped on each library refresh so the table view reloads after a scan.
   const [libVersion, setLibVersion] = useState(0);
   const [loadingAlbums, setLoadingAlbums] = useState(true);
+  // What the library load is currently doing — surfaced next to the spinner so
+  // a slow step (e.g. re-joining a freshly exported catalogue) says so.
+  const [loadPhase, setLoadPhase] = useState("loading library…");
   const [scanning, setScanning] = useState(false);
   const [progress, setProgress] = useState<ScanProgress | null>(null);
   const [healthOpen, setHealthOpen] = useState(false);
@@ -253,6 +259,10 @@ export default function App() {
   const [sort, setSort] = useState<SortKey>("artist");
   const [filter, setFilter] = useState("");
   const [videoOnly, setVideoOnly] = useState(false);
+  // Record-label filter over the Collection. Labels are joined from ndisc's
+  // catalogue export, so the list is empty until that manifest exists.
+  const [labelFilter, setLabelFilter] = useState("");
+  const [labels, setLabels] = useState<LabelCount[]>([]);
   const [colCollapsed, setColCollapsed] = usePersistedBool("nplay.col.collapsed");
   const [plCollapsed, setPlCollapsed] = usePersistedBool("nplay.playlist.collapsed");
   const [npCollapsed, setNpCollapsed] = usePersistedBool("nplay.nowplaying.collapsed");
@@ -328,11 +338,22 @@ export default function App() {
   async function refreshAlbums() {
     setLoadingAlbums(true);
     try {
+      // Re-join ndisc's catalogue before listing, so labels are current on every
+      // library load — no rescan needed after re-exporting the manifest from
+      // ndisc. Cheap (indexed UPDATE by dir) and a no-op if the export is absent.
+      setLoadPhase("syncing labels…");
+      await refreshCatalogue().catch(() => 0);
+      setLoadPhase("loading library…");
       setAlbums(await listAlbums());
       setLibVersion((v) => v + 1);
       libraryStats()
         .then(setStats)
         .catch(() => {});
+      // Label vocabulary follows the library — a scan re-joins ndisc's
+      // catalogue, so the filter's options refresh with it.
+      listLabels()
+        .then(setLabels)
+        .catch(() => setLabels([]));
     } finally {
       setLoadingAlbums(false);
     }
@@ -1196,6 +1217,28 @@ export default function App() {
               >
                 <Film size={12} /> Video
               </button>
+              {labels.length > 0 && (
+                <select
+                  value={labelFilter}
+                  onChange={(e) => setLabelFilter(e.target.value)}
+                  title="Filter the Collection by record label (from ndisc's catalogue)"
+                  aria-label="Filter by label"
+                  className={cn(
+                    "px-1.5 py-1 text-[11px] shrink-0 max-w-[9rem] truncate",
+                    "focus:outline-none focus:ring-1 focus:ring-accent/40",
+                    labelFilter
+                      ? "bg-accent/20 text-accent"
+                      : "bg-surface/60 text-muted hover:text-fg/80",
+                  )}
+                >
+                  <option value="">All labels</option>
+                  {labels.map((l) => (
+                    <option key={l.name} value={l.name}>
+                      {l.name} ({l.albums})
+                    </option>
+                  ))}
+                </select>
+              )}
               <div className="relative flex-1 min-w-0">
                 <Search
                   size={13}
@@ -1212,7 +1255,7 @@ export default function App() {
             <div className="flex-1 min-h-0 overflow-y-auto pr-1 [scrollbar-gutter:stable]">
               {loadingAlbums ? (
                 <div className="px-2 py-4 text-sm text-muted flex items-center gap-2">
-                  <Loader2 size={14} className="animate-spin" /> loading library…
+                  <Loader2 size={14} className="animate-spin" /> {loadPhase}
                 </div>
               ) : (
                 <LibraryTree
@@ -1223,6 +1266,7 @@ export default function App() {
                   sort={sort}
                   filter={filter}
                   videoOnly={videoOnly}
+                  labelFilter={labelFilter}
                 />
               )}
             </div>

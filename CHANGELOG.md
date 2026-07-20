@@ -7,6 +7,20 @@ app's own semver, below.
 
 ## 0.2.0-beta.1 — unreleased
 
+### Filter the Collection by record label
+- **Label filter** in the Collection toolbar — a dropdown of every label in the
+  library with its album count; selecting one narrows the tree (and auto-expands
+  matches, like the other filters).
+- Labels are joined from **ndisc's `catalogue.json`** by album folder
+  (`albums.dir`), not read from the files: only ~28% of the library carries a
+  label tag, where ndisc has one for ~77% of the catalogue. New `label` /
+  `catalog` columns, migrated in place.
+- The join runs at scan-end **and on every library load**, so re-exporting the
+  manifest from ndisc just needs a relaunch — no rescan. Cached by folder.
+- Batched into **one transaction**: ~2.4k individual UPDATEs each committing (and
+  fsyncing) separately cost seconds on every library load. Also names the current
+  step next to the spinner ("syncing labels…" / "loading library…").
+
 ### Monochrome theme — and it is now the default
 
 - **New `mono` theme**, and the title now cycles **fizx → upleb → mono**.
@@ -428,17 +442,14 @@ app's own semver, below.
 
 ## Roadmap
 
-### Next (v0.1.0-beta.2)
+### Next
 - **Further video / Video-section work** — beyond the current mp4 loopback
   playback.
-- (done: spacebar play/pause; the flat sortable library table view.)
+- (done: spacebar play/pause; the flat sortable library table view; BPM
+  display; playlist drag-reorder; the **ntree** `normalize_videos` batch op
+  — remaining nplay-side work is running it across legacy library video.)
 
 ### Later
-- **Library video normalization** — a batch "Normalize videos" op in **ntree**
-  to remux/transcode legacy library videos (mpg/avi/mov, non-faststart mp4) to
-  playable H.264/AAC faststart mp4, so nplay plays the whole set with picture.
-- BPM display (aubio, ported from the smpl detector).
 - Responsive auto-collapse of panels at narrow widths.
-- Playlist reorder (drag / up-down).
 - "Verify library" decode-probe pass (catch corrupt files of a supported
   format that the scan-time format check can't flag).

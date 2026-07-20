@@ -13,6 +13,26 @@ export interface Album {
   trackCount: number;
   hasVideo: boolean;
   coverPath: string | null;
+  /** Record label, joined from ndisc's catalogue export by folder. Null when
+   *  the album isn't in ndisc's catalogue or has no label there. */
+  label: string | null;
+}
+
+/** A label present in the library, with how many albums carry it. */
+export interface LabelCount {
+  name: string;
+  albums: number;
+}
+
+/** Distinct labels in the library — powers the Collection label filter. */
+export async function listLabels(): Promise<LabelCount[]> {
+  return invoke<LabelCount[]>("list_labels");
+}
+
+/** Re-pull labels from ndisc's `catalogue.json` without a full rescan. Returns
+ *  how many albums matched. Use after re-exporting the manifest from ndisc. */
+export async function refreshCatalogue(): Promise<number> {
+  return invoke<number>("refresh_catalogue");
 }
 
 export interface Track {

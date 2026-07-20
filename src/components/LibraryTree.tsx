@@ -66,6 +66,9 @@ interface LibraryTreeProps {
   filter: string;
   /** Restrict to albums that contain video, and show only their video tracks. */
   videoOnly: boolean;
+  /** Restrict to albums on this record label ("" = all). Label comes from
+   *  ndisc's catalogue export, so albums ndisc doesn't know are excluded. */
+  labelFilter: string;
 }
 
 interface ArtistGroup {
@@ -86,11 +89,15 @@ function LibraryTreeImpl({
   sort,
   filter,
   videoOnly,
+  labelFilter,
 }: LibraryTreeProps) {
   // Group by artist (backend already sorts by artist, year, album), then
   // re-order each group's albums by the chosen sort and apply the filter.
   const groups = useMemo<ArtistGroup[]>(() => {
-    const source = videoOnly ? albums.filter((a) => a.hasVideo) : albums;
+    const byLabel = labelFilter
+      ? albums.filter((a) => a.label === labelFilter)
+      : albums;
+    const source = videoOnly ? byLabel.filter((a) => a.hasVideo) : byLabel;
     const out: ArtistGroup[] = [];
     let last: ArtistGroup | null = null;
     for (const a of source) {
@@ -125,11 +132,11 @@ function LibraryTreeImpl({
         return albums.length ? { artist: g.artist, albums } : null;
       })
       .filter((g): g is ArtistGroup => g !== null);
-  }, [albums, sort, filter, videoOnly]);
+  }, [albums, sort, filter, videoOnly, labelFilter]);
 
-  // Auto-expand artists when narrowing (text filter or video-only) so the
+  // Auto-expand artists when narrowing (text filter, video-only or label) so the
   // (usually few) matches are visible without manual drilling.
-  const filtering = filter.trim().length > 0 || videoOnly;
+  const filtering = filter.trim().length > 0 || videoOnly || labelFilter !== "";
 
   const [openArtists, setOpenArtists] = useState<Set<string>>(new Set());
   const [openAlbums, setOpenAlbums] = useState<Set<number>>(new Set());
