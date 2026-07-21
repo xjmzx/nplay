@@ -5,7 +5,7 @@ siblings (ndisc / ndisc.view / glmps), nplay is a local player and **not** a
 participant in the ndisc Nostr wire contract, so it tracks a single axis: this
 app's own semver, below.
 
-## 0.2.0-beta.1 — unreleased
+## 0.2.0-beta.2 — 2026-07-21
 
 ### Adopt the suite dot-colour model — neutral count badges
 - The Collection's count chips (artist album-count, album track-count) were
@@ -41,6 +41,20 @@ app's own semver, below.
 - Batched into **one transaction**: ~2.4k individual UPDATEs each committing (and
   fsyncing) separately cost seconds on every library load. Also names the current
   step next to the spinner ("syncing labels…" / "loading library…").
+
+### Cross-platform shared suite dir
+- The suite handoff files (`published.json` / `catalogue.json`, `roots.json`)
+  now resolve per platform — `%LOCALAPPDATA%\ndisc-suite` on Windows, the
+  existing `~/.local/share/ndisc-suite` on Linux/macOS — so a non-Linux build
+  reads ndisc's exports instead of a Linux-only path. Linux path unchanged;
+  moves as a coordinated wave with the other suite apps.
+
+### Playlist — WebKit drag-reorder fix + non-destructive sort views
+- Drag-to-reorder now behaves under WebKit, and the sort views (artist / album /
+  title / duration) are a non-destructive presentation *over* the manual order
+  rather than a rewrite — clearing a sort keeps the current track playing.
+
+## 0.2.0-beta.1 — 2026-07-14
 
 ### Monochrome theme — and it is now the default
 
