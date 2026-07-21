@@ -3,6 +3,7 @@ import { getVersion } from "@tauri-apps/api/app";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import {
   AudioLines,
+  ChevronDown,
   Film,
   FolderOpen,
   Home,
@@ -1218,26 +1219,36 @@ export default function App() {
                 <Film size={12} /> Video
               </button>
               {labels.length > 0 && (
-                <select
-                  value={labelFilter}
-                  onChange={(e) => setLabelFilter(e.target.value)}
-                  title="Filter the Collection by record label (from ndisc's catalogue)"
-                  aria-label="Filter by label"
-                  className={cn(
-                    "px-1.5 py-1 text-[11px] shrink-0 max-w-[9rem] truncate",
-                    "focus:outline-none focus:ring-1 focus:ring-accent/40",
-                    labelFilter
-                      ? "bg-accent/20 text-accent"
-                      : "bg-surface/60 text-muted hover:text-fg/80",
-                  )}
-                >
-                  <option value="">All labels</option>
-                  {labels.map((l) => (
-                    <option key={l.name} value={l.name}>
-                      {l.name} ({l.albums})
-                    </option>
-                  ))}
-                </select>
+                <div className="relative shrink-0">
+                  {/* appearance-none drops WebKit's bright native chrome (the
+                      sharp-contrast box) so the fill is ours; a dark bg-bg/40
+                      lets it sit into the filter bar instead of standing off it.
+                      Own chevron since the native one goes with appearance. */}
+                  <select
+                    value={labelFilter}
+                    onChange={(e) => setLabelFilter(e.target.value)}
+                    title="Filter the Collection by record label (from ndisc's catalogue)"
+                    aria-label="Filter by label"
+                    className={cn(
+                      "appearance-none pl-1.5 pr-6 py-1 text-[11px] max-w-[9rem] truncate",
+                      "focus:outline-none focus:ring-1 focus:ring-accent/40",
+                      labelFilter
+                        ? "bg-accent/20 text-accent"
+                        : "bg-bg/40 text-muted hover:text-fg/80",
+                    )}
+                  >
+                    <option value="">All labels</option>
+                    {labels.map((l) => (
+                      <option key={l.name} value={l.name}>
+                        {l.name} ({l.albums})
+                      </option>
+                    ))}
+                  </select>
+                  <ChevronDown
+                    size={12}
+                    className="absolute right-1.5 top-1/2 -translate-y-1/2 pointer-events-none text-muted"
+                  />
+                </div>
               )}
               <div className="relative flex-1 min-w-0">
                 <Search

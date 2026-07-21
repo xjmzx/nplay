@@ -228,7 +228,11 @@ function LibraryTreeImpl({
               <span className="flex-1 truncate min-w-0 px-2 py-0.5 bg-mauve/10 group-hover/row:bg-mauve/25 text-mauve font-medium transition-colors">
                 {g.artist}
               </span>
-              <span className="shrink-0 min-w-[2.25rem] px-2 py-0.5 bg-mauve/10 group-hover/row:bg-mauve/25 text-mauve/80 text-[11px] tabular-nums text-center transition-colors">
+              {/* Album count — neutral quantity badge (--c-medium: leaf-green in
+                  colour themes, grey in mono). Soft fill (medium/15 over the row)
+                  so it stays quiet; the name pill carries the tier hue, the
+                  quantity stays neutral. Top-right corner rounded. Ref: ndisc. */}
+              <span className="shrink-0 min-w-[2.25rem] px-2 py-0.5 bg-medium/15 text-medium text-[11px] tabular-nums text-center rounded-tr-xl">
                 {g.albums.length}
               </span>
             </button>
@@ -280,21 +284,27 @@ function LibraryTreeImpl({
                             <Film size={12} className="text-mauve/70 shrink-0" />
                           )}
                         </button>
+                        {/* Album Play / Add sit on the row's digital tint (like
+                            the name + year pills) so they read as part of one
+                            album bar rather than floating bare. */}
                         <button
                           onClick={() => playAlbum(al.id, 0)}
                           title="Play album"
-                          className="text-muted/50 hover:text-accent shrink-0 transition-colors"
+                          className="shrink-0 px-1.5 py-1 bg-digital/10 group-hover:bg-digital/25 text-muted/60 hover:text-accent transition-colors"
                         >
                           <Play size={13} />
                         </button>
                         <button
                           onClick={() => addAlbum(al.id)}
                           title="Add album to playlist"
-                          className="text-muted/50 hover:text-accent shrink-0 transition-colors"
+                          className="shrink-0 px-1.5 py-1 bg-digital/10 group-hover:bg-digital/25 text-muted/60 hover:text-accent transition-colors"
                         >
                           <Plus size={13} />
                         </button>
-                        <span className="shrink-0 min-w-[2.25rem] px-2 py-0.5 bg-digital/10 group-hover:bg-digital/25 text-digital/80 text-[11px] tabular-nums text-center transition-colors">
+                        {/* Track count — same soft neutral quantity badge as the
+                            artist album-count; the digital name pill keeps the
+                            release-tier hue. */}
+                        <span className="shrink-0 min-w-[2.25rem] px-2 py-0.5 bg-medium/15 text-medium text-[11px] tabular-nums text-center rounded-tr-xl">
                           {al.trackCount}
                         </span>
                       </div>

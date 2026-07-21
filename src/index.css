@@ -20,6 +20,12 @@
   --c-alert: 248 113 113;
   --c-mauve: 167 139 250;
   --c-auburn: 178 96 58;
+  /* Neutral quantity token — the count badges (album count, track count). Leaf
+     green in the colour themes, grey in mono. Hue carries hierarchy (mauve
+     artist / digital release tint the NAME); the quantity is neutral, so a
+     count reads as a count and not as another tier. Mirrors ndisc's --c-medium,
+     the suite reference. */
+  --c-medium: 74 222 128;
 }
 
 .theme-upleb {
@@ -36,6 +42,9 @@
   --c-alert: 248 113 113;
   --c-mauve: 255 179 71;
   --c-auburn: 178 96 58;
+  /* Neutral quantity token — leaf green here too (kept identical to :root, like
+     the semantic tokens). */
+  --c-medium: 74 222 128;
 }
 
 /* ── Monochrome ─────────────────────────────────────────────────────────────
@@ -84,6 +93,11 @@
   --c-warn: 251 191 36;
   --c-alert: 248 113 113;
   --c-auburn: 178 96 58;
+
+  /* Neutral quantity token — grey here (the count badges go monochrome with the
+     rest of the chrome). Distinct from --c-ok, which stays green because it is
+     status, not decoration. Matches ndisc's mono --c-medium value. */
+  --c-medium: 210 210 216;
 }
 
 html,

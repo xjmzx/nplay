@@ -7,6 +7,27 @@ app's own semver, below.
 
 ## 0.2.0-beta.1 — unreleased
 
+### Adopt the suite dot-colour model — neutral count badges
+- The Collection's count chips (artist album-count, album track-count) were
+  tinted to their own row (mauve / digital). They now sit on the neutral
+  **`--c-medium`** badge — leaf-green in the colour themes, grey in mono —
+  following ndisc's rule that **hue carries hierarchy** (the name pill keeps its
+  tier tint) while **quantity is neutral**, so a count reads as a count and not
+  as another tier. Soft fill (`medium/15`) with a rounded top-right corner, kept
+  quiet so it doesn't shout over the row. New `--c-medium` token + `medium`
+  Tailwind colour.
+- The mono theme greys the badge with the rest of the chrome — distinct from
+  `--c-ok`, which stays green because it is status, not decoration. Value-matched
+  to ndisc's `--c-medium`, the documented suite reference.
+- **Collection bar polish** alongside: the album Play / Add buttons now sit on
+  the row's digital tint (like the name + year pills) so an album row reads as
+  one bar; and the "All labels" filter dropdown drops WebKit's bright native
+  chrome (`appearance-none` + a dark fill + its own chevron) so it settles into
+  the filter bar instead of standing off it.
+- Completeness leaf-dots and disc counts are **not** ported: nplay has no
+  expected-vs-present track data and the Collection tree isn't multi-disc, so
+  only the count-badge styling from the model applies here.
+
 ### Filter the Collection by record label
 - **Label filter** in the Collection toolbar — a dropdown of every label in the
   library with its album count; selecting one narrows the tree (and auto-expands
