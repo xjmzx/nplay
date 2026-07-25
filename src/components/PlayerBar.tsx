@@ -66,11 +66,41 @@ export function PlayerBar({
   return (
     <div className="flex justify-center px-4 py-2.5 bg-panel border-t border-surface/60">
       <div className="w-1/2 min-w-[300px] max-w-full flex flex-col items-center gap-1">
-        {/* Title */}
-        <div className="flex items-center justify-center gap-2 text-[13px] min-w-0 max-w-full">
-          <span className="truncate text-fg/90">{track?.title ?? "—"}</span>
-          {album && (
-            <span className="truncate text-muted shrink-[2]">{album.artist}</span>
+        {/* Now-playing chip — title · artist · record label grouped into one
+            rounded bar above the seek. The three read as a single unit now:
+            one shared medium weight and size, with only opacity stepping the
+            hierarchy (title brightest, label quietest) and a middot between
+            each. The bar has a min width so a one-word title still reads as a
+            proper chip, and a max width + per-segment truncation (label
+            collapses first, then artist, title last) so a long library field
+            can't blow the layout. The stroke is the fg token — near-white, so
+            it holds as a light hairline on both the fizx and upleb themes.
+            Album.label is joined from ndisc's catalogue and is null when the
+            album isn't catalogued. */}
+        <div className="flex items-center justify-center gap-2 min-w-[16rem] max-w-full px-4 py-1.5 rounded-lg border border-fg/20 bg-surface/30 text-[13px] font-medium leading-none">
+          <span className="truncate min-w-0 text-fg">{track?.title ?? "—"}</span>
+          {album?.artist && (
+            <>
+              <span className="shrink-0 text-muted/60" aria-hidden>
+                ·
+              </span>
+              <span className="truncate min-w-0 shrink-[2] text-fg/80">
+                {album.artist}
+              </span>
+            </>
+          )}
+          {album?.label && (
+            <>
+              <span className="shrink-0 text-muted/60" aria-hidden>
+                ·
+              </span>
+              <span
+                className="truncate min-w-0 shrink-[3] text-fg/65"
+                title={`Record label — ${album.label}`}
+              >
+                {album.label}
+              </span>
+            </>
           )}
         </div>
 
