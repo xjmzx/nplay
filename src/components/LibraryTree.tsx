@@ -281,7 +281,7 @@ function LibraryTreeImpl({
                             </span>
                           )}
                           {al.hasVideo && (
-                            <Film size={12} className="text-mauve/70 shrink-0" />
+                            <Film size={12} className="text-mauve/60 shrink-0" />
                           )}
                         </button>
                         {/* Album Play / Add sit on the row's digital tint (like
