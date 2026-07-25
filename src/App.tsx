@@ -36,6 +36,7 @@ import { ScanProgressBar } from "./components/ScanProgressBar";
 import { Health, fmtAgo } from "./components/Health";
 import { Spectrum, type SpectrumMode } from "./components/Spectrum";
 import { TableView } from "./components/TableView";
+import { ToolbarIconButton } from "./components/ToolbarIconButton";
 import {
   audioPause,
   audioPlay,
@@ -964,8 +965,11 @@ export default function App() {
 
   return (
     <div className="h-full flex flex-col bg-bg text-fg">
-      {/* Header — [ title + folder ] [ master transport ] [ scan ] */}
-      <header className="grid grid-cols-[1fr_auto_1fr] items-center gap-4 px-4 py-3 border-b border-surface/60 bg-panel/60">
+      {/* Header — suite top-bar grammar (SUITE.md § Top-bar grammar): rounded
+          panel card, three-column grid [ title + folder | transport | scan +
+          view-switch ]. The m-4/mb-0 sits the card in the same p-4 rhythm as
+          the main content below it. */}
+      <header className="m-4 mb-0 shrink-0 rounded-lg bg-panel shadow-md grid grid-cols-[1fr_auto_1fr] items-center gap-4 px-4 py-3">
         <div className="flex items-center gap-3 min-w-0">
           <Music size={18} className="text-accent shrink-0" />
           <h1 className="text-2xl font-bold tracking-tight leading-none shrink-0">
@@ -1118,37 +1122,38 @@ export default function App() {
             )}
             {scanning ? "Scanning" : "Scan"}
           </button>
-          {/* View-switch cluster — Player · Table · Current, at the right end
-              of the header (matches where ndisc's view buttons sit). */}
+          {/* View-switch cluster — always the last right-zone group per the
+              suite grammar: digital-tone ToolbarIconButton, Home first, active
+              always lit. Shared vocabulary with ndisc/ntree (was nplay's local
+              accent-tinted modeBtn). */}
           <span className="w-px h-6 bg-surface shrink-0" aria-hidden="true" />
           <div className="inline-flex gap-1">
-            <button
+            <ToolbarIconButton
+              tone="digital"
+              pressed={view === "library"}
+              title={
+                view === "library" ? "Player (current view)" : "Home — player"
+              }
               onClick={() => setView("library")}
-              title="Home — player"
-              aria-label="Home"
-              aria-pressed={view === "library"}
-              className={modeBtn(view === "library")}
             >
-              <Home size={15} />
-            </button>
-            <button
-              onClick={() => setView("table")}
+              <Home size={14} />
+            </ToolbarIconButton>
+            <ToolbarIconButton
+              tone="digital"
+              pressed={view === "table"}
               title="Track table"
-              aria-label="Track table"
-              aria-pressed={view === "table"}
-              className={modeBtn(view === "table")}
+              onClick={() => setView("table")}
             >
-              <Table size={15} />
-            </button>
-            <button
-              onClick={() => setView("current")}
+              <Table size={14} />
+            </ToolbarIconButton>
+            <ToolbarIconButton
+              tone="digital"
+              pressed={view === "current"}
               title="Current — release feed channel"
-              aria-label="Current"
-              aria-pressed={view === "current"}
-              className={modeBtn(view === "current")}
+              onClick={() => setView("current")}
             >
-              <Radio size={15} />
-            </button>
+              <Radio size={14} />
+            </ToolbarIconButton>
           </div>
         </div>
       </header>
