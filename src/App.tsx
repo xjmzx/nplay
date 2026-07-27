@@ -32,7 +32,7 @@ import { LibraryTree, type SortKey } from "./components/LibraryTree";
 import { NowPlaying } from "./components/NowPlaying";
 import { PlayerBar } from "./components/PlayerBar";
 import { Playlist, type PlaylistSortKey } from "./components/Playlist";
-import { ScanProgressBar } from "./components/ScanProgressBar";
+import { ScanProgressBar, scanStatusText } from "./components/ScanProgressBar";
 import { Health, fmtAgo } from "./components/Health";
 import { Spectrum, type SpectrumMode } from "./components/Spectrum";
 import { TableView } from "./components/TableView";
@@ -211,6 +211,14 @@ function usePersistedBool(key: string, def = false) {
     localStorage.setItem(key, v ? "1" : "0");
   }, [key, v]);
   return [v, setV] as const;
+}
+
+// Suite rule (n-suite headers): the version chip shows only
+// major.minor.patch; any pre-release/build suffix (…-beta.2, +build) drops
+// to the tooltip so the chip keeps a fixed, consistent width as releases
+// move from 0.2.0-beta.2 toward 1.3.1.
+function shortVersion(v: string): string {
+  return v.split(/[-+]/)[0];
 }
 
 export default function App() {
@@ -971,7 +979,6 @@ export default function App() {
           the main content below it. */}
       <header className="m-4 mb-0 shrink-0 rounded-lg bg-panel shadow-md grid grid-cols-[1fr_auto_1fr] items-center gap-4 px-4 py-3">
         <div className="flex items-center gap-3 min-w-0">
-          <Music size={18} className="text-accent shrink-0" />
           <h1 className="text-2xl font-bold tracking-tight leading-none shrink-0">
             <button
               type="button"
@@ -980,17 +987,26 @@ export default function App() {
                   t === "fizx" ? "upleb" : t === "upleb" ? "mono" : "fizx",
                 )
               }
-              title={`Theme: ${theme} — click to cycle (fizx → upleb → mono)`}
-              aria-label={`Theme: ${theme}. Click to cycle.`}
-              className="cursor-pointer"
+              title={
+                theme === "fizx"
+                  ? "Theme: fizx.uk — click to switch to upleb.uk"
+                  : theme === "upleb"
+                    ? "Theme: upleb.uk — click to switch to monochrome"
+                    : "Theme: monochrome — click to switch to fizx.uk"
+              }
+              aria-label="Switch colour theme"
+              className="cursor-pointer transition-opacity hover:opacity-70"
             >
               <span className="text-accent">n</span>
               <span className="text-mauve">play</span>
             </button>
           </h1>
           {appVersion && (
-            <span className="hidden md:inline-flex items-center px-2 py-1 bg-surface text-mauve font-mono text-[11px] shrink-0">
-              v{appVersion}
+            <span
+              className="hidden md:inline-flex items-center px-2.5 py-2 rounded-md bg-surface text-mauve font-mono text-xs shrink-0"
+              title={`v${appVersion}`}
+            >
+              v{shortVersion(appVersion)}
             </span>
           )}
           <button
@@ -1001,6 +1017,27 @@ export default function App() {
             <FolderOpen size={14} className="shrink-0" />
             <span className="truncate max-w-[280px]">{musicRoot || "…"}</span>
           </button>
+          {/* Library search, promoted out of the Collection panel into the
+              header so it gets the full left-column width. Only the split
+              (library) view is filtered by `filter`, so it only shows there —
+              the table/current views have their own surfaces. `flex-1 min-w-0`
+              lets it grow into the leftover width without pushing the centred
+              transport (its min-content stays near zero). */}
+          {view === "library" && (
+            <div className="relative flex-1 min-w-0">
+              <Search
+                size={13}
+                className="absolute left-2 top-1/2 -translate-y-1/2 text-muted pointer-events-none"
+              />
+              <input
+                value={filter}
+                onChange={(e) => setFilter(e.target.value)}
+                placeholder="Search library…"
+                aria-label="Search the collection"
+                className="w-full min-w-0 pl-7 pr-2 py-1 bg-surface/60 text-[12px] placeholder:text-muted/60 focus:outline-none focus:ring-1 focus:ring-accent/40"
+              />
+            </div>
+          )}
         </div>
 
         {/* Master transport — mirrors the bottom bar; matches smpl's header. */}
@@ -1073,14 +1110,27 @@ export default function App() {
         </div>
 
         <div className="flex items-center gap-3 shrink-0 justify-self-end">
-          {/* Permanent scan meter — muted track at rest, accent fill on scan. */}
-          <ScanProgressBar progress={progress} active={scanning} />
-          {/* The library summary is the way in to Library health — the counts
-              are the symptom, the dialog is the explanation. */}
+          {/* Scan feedback: status text on top, the progress bar stacked
+              directly beneath it at the same width — so the meter costs no
+              horizontal room at rest (it's a thin muted line under the text,
+              well inside the header's row height).
+
+              Fixed min-width, right-aligned: the narration text changes width
+              on every progress tick, and in a 1fr grid track that would tug the
+              whole header (transport included) sideways many times a second.
+              Reserving one stable width kills the reflow — text grows leftward
+              into the slack, the Scan button never moves. */}
+          <div className="min-w-[19rem] flex flex-col gap-1">
+          <div className="flex justify-end">
+          {scanning ? (
+            <span className="text-[12px] text-accent whitespace-nowrap font-mono tabular-nums">
+              {scanStatusText(progress)}
+            </span>
+          ) : (
           <button
             onClick={() => setHealthOpen(true)}
             title="Library health — index vs disk, and what can't be played"
-            className="text-[12px] text-muted whitespace-nowrap hover:text-fg
+            className="text-[12px] text-muted whitespace-nowrap text-right hover:text-fg
                        transition-colors"
           >
             {albumCount} albums
@@ -1106,6 +1156,11 @@ export default function App() {
               </span>
             ) : null}
           </button>
+          )}
+          </div>
+          {/* Meter stacked under the status line at the same width. */}
+          <ScanProgressBar progress={progress} active={scanning} />
+          </div>
           <button
             onClick={doScan}
             disabled={scanning}
@@ -1188,11 +1243,13 @@ export default function App() {
           <Section
             title="Collection"
             icon={<ListMusic size={15} />}
+            iconOnly
             elastic
             className="min-w-0"
             onTitleClick={() => setColCollapsed(true)}
           >
-            {/* sort + filter controls */}
+            {/* sort + filter controls (the text search now lives in the
+                header — see the left-zone Search input). */}
             <div className="flex items-center gap-2 shrink-0">
               <div className="inline-flex bg-surface/60 p-0.5 text-[11px] shrink-0">
                 {(["artist", "album", "year"] as SortKey[]).map((k) => (
@@ -1255,18 +1312,6 @@ export default function App() {
                   />
                 </div>
               )}
-              <div className="relative flex-1 min-w-0">
-                <Search
-                  size={13}
-                  className="absolute left-2 top-1/2 -translate-y-1/2 text-muted pointer-events-none"
-                />
-                <input
-                  value={filter}
-                  onChange={(e) => setFilter(e.target.value)}
-                  placeholder="Filter…"
-                  className="w-full pl-7 pr-2 py-1 bg-surface/60 text-[12px] placeholder:text-muted/60 focus:outline-none focus:ring-1 focus:ring-accent/40"
-                />
-              </div>
             </div>
             <div className="flex-1 min-h-0 overflow-y-auto pr-1 [scrollbar-gutter:stable]">
               {loadingAlbums ? (
@@ -1300,6 +1345,7 @@ export default function App() {
           <Section
             title="Playlist"
             icon={<ListPlus size={15} />}
+            iconOnly
             elastic
             className="min-w-0"
             onTitleClick={() => setPlCollapsed(true)}
@@ -1337,6 +1383,7 @@ export default function App() {
             <Section
               title="Now playing"
               icon={currentIsPlayableVideo ? <Film size={15} /> : <Music size={15} />}
+              iconOnly
               onTitleClick={() => setNpCollapsed(true)}
             >
               <NowPlaying
@@ -1352,6 +1399,7 @@ export default function App() {
             <Section
               title="Spectrum"
               icon={<AudioLines size={15} />}
+              iconOnly
               elastic
               className="flex-1"
             >

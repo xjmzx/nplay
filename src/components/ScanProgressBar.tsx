@@ -1,12 +1,38 @@
 import type { ScanProgress } from "../lib/tauri";
 
 /**
- * Compact scan-progress bar that lives permanently inline in the header
- * (next to the album count + Scan button). The recessed track is always
- * shown in a muted state; when a scan runs the accent fill grows across it
- * and a live pct/phase label appears. Persistent so it never shifts the
- * header layout — a full-width banner jolted the whole view and the scan
- * is too quick to read.
+ * One-line narration of a scan for the header summary slot — the words the
+ * 80px bar can't carry. Names the current phase and folds in live counts so
+ * even the fast read sweep reads as real work rather than a flicker to 100%.
+ */
+export function scanStatusText(progress: ScanProgress | null): string {
+  const phase = progress?.phase ?? "walk";
+  const done = (progress?.done ?? 0).toLocaleString();
+  const total = (progress?.total ?? 0).toLocaleString();
+  switch (phase) {
+    case "walk":
+      // total is unknown during the walk; the growing "found N" is the point.
+      return (progress?.done ?? 0) > 0
+        ? `finding files… ${done}`
+        : "finding files…";
+    case "read":
+      return `reading tags… ${done} / ${total}`;
+    case "index":
+      return "building albums…";
+    case "done":
+      return "done";
+    default:
+      return "scanning…";
+  }
+}
+
+/**
+ * Full-width scan-progress bar that sits directly under the header status
+ * line (scanStatusText), spanning the same width. The recessed track is
+ * always shown in a muted state; when a scan runs the accent fill grows
+ * across it (green on completion). No inline label — the words live in the
+ * status line above it, so the bar is purely the glanceable fill and stacks
+ * under the text rather than stealing width beside it.
  *
  * Covers both the first import and a manual re-scan (both feed `progress`).
  */
@@ -26,40 +52,20 @@ export function ScanProgressBar({
   const done = progress?.done ?? 0;
   const pct = !active ? 0 : indeterminate ? 100 : Math.round((100 * done) / total);
 
-  const label = !active
-    ? ""
-    : finished
-      ? "✓"
-      : phase === "index"
-        ? "idx"
-        : indeterminate
-          ? "···"
-          : `${pct}%`;
-
   return (
-    <div className="flex items-center gap-2" title="Scan progress">
-      <div className="w-20 h-1 bg-surface/60 overflow-hidden">
-        {indeterminate ? (
-          <div className="h-full w-1/3 bg-accent/70 animate-pulse" />
-        ) : (
-          <div
-            className={
-              finished
-                ? "h-full bg-ok transition-[width] duration-150"
-                : "h-full bg-accent transition-[width] duration-150"
-            }
-            style={{ width: `${pct}%` }}
-          />
-        )}
-      </div>
-      <span
-        className={
-          "text-[11px] font-mono tabular-nums w-8 text-right shrink-0 " +
-          (finished ? "text-ok" : "text-muted")
-        }
-      >
-        {label}
-      </span>
+    <div className="w-full h-1 bg-surface/60 overflow-hidden" title="Scan progress">
+      {indeterminate ? (
+        <div className="h-full w-1/3 bg-accent/70 animate-pulse" />
+      ) : (
+        <div
+          className={
+            finished
+              ? "h-full bg-ok transition-[width] duration-150"
+              : "h-full bg-accent transition-[width] duration-150"
+          }
+          style={{ width: `${pct}%` }}
+        />
+      )}
     </div>
   );
 }

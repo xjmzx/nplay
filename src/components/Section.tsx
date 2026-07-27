@@ -20,6 +20,11 @@ interface SectionProps {
   // somewhere to grow into). Used by Library so its file list can
   // expand when adjacent panels are collapsed.
   elastic?: boolean;
+  // Icon-only header: the title text is dropped from view (kept for
+  // screen readers + a hover tooltip) so the header is just the glyph
+  // and, when collapsible, the chevron. Requires a string title for the
+  // tooltip to read.
+  iconOnly?: boolean;
 }
 
 export function Section({
@@ -30,7 +35,9 @@ export function Section({
   onClick,
   onTitleClick,
   elastic,
+  iconOnly,
 }: SectionProps) {
+  const titleText = typeof title === "string" ? title : undefined;
   return (
     <section
       onClick={onClick}
@@ -45,7 +52,15 @@ export function Section({
     >
       <header
         onClick={onTitleClick}
-        title={onTitleClick ? "Click the header to expand or collapse" : undefined}
+        title={
+          iconOnly
+            ? onTitleClick
+              ? `${titleText ?? ""} — click to expand or collapse`.trim()
+              : titleText
+            : onTitleClick
+              ? "Click the header to expand or collapse"
+              : undefined
+        }
         className={cn(
           "flex items-center gap-2 text-accent font-semibold",
           onTitleClick &&
@@ -54,7 +69,9 @@ export function Section({
         )}
       >
         {icon}
-        <h2 className="text-sm tracking-wide uppercase">{title}</h2>
+        <h2 className={cn("text-sm tracking-wide uppercase", iconOnly && "sr-only")}>
+          {title}
+        </h2>
         {onTitleClick && (
           <ChevronDown size={14} className="ml-auto text-muted shrink-0" />
         )}
