@@ -5,6 +5,32 @@ siblings (ndisc / ndisc.view / glmps), nplay is a local player and **not** a
 participant in the ndisc Nostr wire contract, so it tracks a single axis: this
 app's own semver, below.
 
+## 0.2.0-beta.3 — 2026-07-27
+
+### Multi-disc folder collapse
+- Sibling disc folders (`…/Album/CD1`, `…/Album/CD2`) now collapse into **one
+  album** in the Collection, matching nsmpl. Grouping keys on the release dir (the
+  parent when a folder is disc-named and all its siblings are); a missing
+  `DISCNUMBER` is synthesised from the folder name so CD1 orders before CD2; and
+  cover-art lookup peeks into the disc subfolders. Scan-time only (the index is a
+  wipe-and-rebuild), so no migration. `is_disc_dir_name` is vendored, kept in step
+  with the suite (nsmpl reference).
+
+### Top-bar grammar + header search + scan narration
+- Adopted the suite top-bar grammar; the **version chip** shows only
+  `major.minor.patch` (suffix → tooltip, `shortVersion`). The library **search box
+  moves up into the header** so it gets the full left-column width (library view
+  only). Scan feedback is reworked into a one-line status narration
+  (`scanStatusText` — "finding files… / reading tags… / building albums…") with the
+  progress bar stacked full-width beneath it, so the meter costs no horizontal room
+  and never tugs the header sideways on a progress tick. Section headers gain an
+  `iconOnly` mode.
+
+### Also
+- Figma icon refresh (2026-07-25, two passes); monochrome brand lockup;
+  now-playing grouped into a bordered chip with the record label; the video marker
+  muted to the suite muted-mauve convention.
+
 ## 0.2.0-beta.2 — 2026-07-21
 
 ### Adopt the suite dot-colour model — neutral count badges
