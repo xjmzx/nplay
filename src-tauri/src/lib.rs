@@ -392,6 +392,52 @@ fn parse_leading_int(s: &str) -> Option<i64> {
     digits.parse::<i64>().ok().filter(|&n| n > 0)
 }
 
+/// Is this a disc subfolder name — "CD1", "CD 2", "Disc 3", "Disk1", …? Kept
+/// deliberately in step with the suite reference (nsmpl `is_disc_dir_name`,
+/// src-tauri/src/lib.rs) so multi-disc release layouts collapse identically
+/// across ndisc/nplay/ntree/nsmpl.
+fn is_disc_dir_name(name: &str) -> bool {
+    let n = name.trim().to_ascii_lowercase();
+    for prefix in ["cd", "disc", "disk"] {
+        if let Some(rest) = n.strip_prefix(prefix) {
+            let rest = rest.trim_start_matches([' ', '-', '_', '.']);
+            if matches!(rest.chars().next(), Some(c) if c.is_ascii_digit()) {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+/// The disc number encoded in a disc-folder name ("CD2" → 2). Used to order
+/// discs when the files carry no DISCNUMBER tag.
+fn disc_no_from_dir_name(name: &str) -> Option<i64> {
+    let n = name.trim().to_ascii_lowercase();
+    for prefix in ["cd", "disc", "disk"] {
+        if let Some(rest) = n.strip_prefix(prefix) {
+            return parse_leading_int(rest.trim_start_matches([' ', '-', '_', '.']));
+        }
+    }
+    None
+}
+
+/// The album grouping directory for a track's parent folder. Normally the
+/// parent folder is the album; but when it is a disc subfolder ("CD1"/"Disc 2"/
+/// …) of a multi-disc rip, the release is the PARENT, so the two discs collapse
+/// into one album. Never collapses the music root itself.
+fn release_dir(dir: &Path, root: &Path) -> PathBuf {
+    if dir != root {
+        if let Some(name) = dir.file_name().and_then(|n| n.to_str()) {
+            if is_disc_dir_name(name) {
+                if let Some(parent) = dir.parent() {
+                    return parent.to_path_buf();
+                }
+            }
+        }
+    }
+    dir.to_path_buf()
+}
+
 fn file_stem_string(p: &Path) -> String {
     p.file_stem()
         .and_then(|s| s.to_str())
@@ -600,6 +646,27 @@ fn folder_cover(dir: &Path) -> Option<PathBuf> {
     None
 }
 
+/// Folder cover for a collapsed multi-disc release: scan each disc subfolder
+/// (CD1/CD2/…) for a scored cover image. A multi-disc rip often keeps its front
+/// art inside the disc folders rather than the release parent, so without this
+/// the parent-level `folder_cover` would miss it and fall through to embedded.
+fn folder_cover_in_discs(dir: &Path) -> Option<PathBuf> {
+    let mut subdirs: Vec<PathBuf> = fs::read_dir(dir)
+        .ok()?
+        .filter_map(|e| e.ok())
+        .map(|e| e.path())
+        .filter(|p| {
+            p.is_dir()
+                && p.file_name()
+                    .and_then(|n| n.to_str())
+                    .map(is_disc_dir_name)
+                    .unwrap_or(false)
+        })
+        .collect();
+    subdirs.sort();
+    subdirs.iter().find_map(|sub| folder_cover(sub))
+}
+
 /// The one unnamed image in a folder is almost certainly the cover; with
 /// several unidentified images we decline to guess (ndisc's rule). Only
 /// consulted after the embedded picture has come up empty.
@@ -690,17 +757,31 @@ fn scan_library(app: AppHandle) -> Result<ScanSummary, String> {
     }
     let covers = covers_dir(&app)?;
 
-    // 1. Walk for media files.
+    // 1. Walk for media files. On a large tree the walk alone runs for
+    //    several seconds; a single up-front event would leave the header dead
+    //    until the read phase, so stream a running "found N" count instead —
+    //    total is still unknown (0), but the growing number reads as progress.
     let _ = app.emit(
         "scan-progress",
         ScanProgress { phase: "walk".into(), done: 0, total: 0, path: String::new() },
     );
-    let files: Vec<PathBuf> = WalkDir::new(&root_pb)
-        .into_iter()
-        .filter_map(|e| e.ok())
-        .filter(|e| e.file_type().is_file() && is_media(e.path()))
-        .map(|e| e.into_path())
-        .collect();
+    let mut files: Vec<PathBuf> = Vec::new();
+    for entry in WalkDir::new(&root_pb).into_iter().filter_map(|e| e.ok()) {
+        if entry.file_type().is_file() && is_media(entry.path()) {
+            files.push(entry.into_path());
+            if files.len() % 256 == 0 {
+                let _ = app.emit(
+                    "scan-progress",
+                    ScanProgress {
+                        phase: "walk".into(),
+                        done: files.len(),
+                        total: 0,
+                        path: String::new(),
+                    },
+                );
+            }
+        }
+    }
     let total = files.len();
 
     // 2. Read tags in parallel. Emit progress on a fine cadence (~200 ticks
@@ -736,10 +817,23 @@ fn scan_library(app: AppHandle) -> Result<ScanSummary, String> {
         ScanProgress { phase: "index".into(), done: total, total, path: String::new() },
     );
 
-    // 3. Group by parent directory into albums.
+    // 3. Group into albums by the release directory. A track's parent folder is
+    //    normally the album, but for a multi-disc rip laid out as sibling disc
+    //    subfolders (CD1/CD2/…) the release is the PARENT, so the discs collapse
+    //    into one album (matching nsmpl). When such a track carries no DISCNUMBER
+    //    tag, synthesise its disc number from the folder name so CD1 orders
+    //    before CD2.
     let mut groups: HashMap<PathBuf, Vec<FileMeta>> = HashMap::new();
-    for m in metas {
-        groups.entry(m.dir.clone()).or_default().push(m);
+    for mut m in metas {
+        let key = release_dir(&m.dir, &root_pb);
+        if key != m.dir && m.disc_no.is_none() {
+            m.disc_no = m
+                .dir
+                .file_name()
+                .and_then(|n| n.to_str())
+                .and_then(disc_no_from_dir_name);
+        }
+        groups.entry(key).or_default().push(m);
     }
 
     // 4. Build albums (covers resolved in parallel — disk-bound).
@@ -773,6 +867,7 @@ fn scan_library(app: AppHandle) -> Result<ScanSummary, String> {
             // unnamed image. Embedded outranks an unnamed guess: it is stated
             // by the release itself rather than inferred from a filename.
             let cover = folder_cover(&dir)
+                .or_else(|| folder_cover_in_discs(&dir))
                 .or_else(|| {
                     tracks
                         .iter()
