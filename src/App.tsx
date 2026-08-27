@@ -966,7 +966,7 @@ export default function App() {
   const mainCols = [
     colCollapsed ? "2.5rem" : "minmax(0, 1fr)",
     plCollapsed ? "2.5rem" : "minmax(0, 1fr)",
-    npCollapsed ? "2.5rem" : "minmax(300px, 0.55fr)",
+    npCollapsed ? "2.5rem" : "minmax(300px, 0.78fr)",
   ].join(" ");
 
   const albumCount = albums.length;
@@ -1012,7 +1012,7 @@ export default function App() {
           <button
             onClick={chooseRoot}
             title="Choose music folder"
-            className="flex items-center gap-1.5 min-w-0 text-[12px] text-muted hover:text-fg/90 transition-colors"
+            className="flex items-center gap-1.5 min-w-0 text-[12px] text-fg/70 hover:text-fg transition-colors"
           >
             <FolderOpen size={14} className="shrink-0" />
             <span className="truncate max-w-[280px]">{musicRoot || "…"}</span>
@@ -1027,14 +1027,14 @@ export default function App() {
             <div className="relative flex-1 min-w-0">
               <Search
                 size={13}
-                className="absolute left-2 top-1/2 -translate-y-1/2 text-muted pointer-events-none"
+                className="absolute left-2 top-1/2 -translate-y-1/2 text-fg/55 pointer-events-none"
               />
               <input
                 value={filter}
                 onChange={(e) => setFilter(e.target.value)}
                 placeholder="Search library…"
                 aria-label="Search the collection"
-                className="w-full min-w-0 pl-7 pr-2 py-1 bg-surface/60 text-[12px] placeholder:text-muted/60 focus:outline-none focus:ring-1 focus:ring-accent/40"
+                className="w-full min-w-0 pl-7 pr-2 py-1 bg-surface text-fg text-[12px] placeholder:text-muted focus:outline-none focus:ring-1 focus:ring-accent/40"
               />
             </div>
           )}
@@ -1130,7 +1130,7 @@ export default function App() {
           <button
             onClick={() => setHealthOpen(true)}
             title="Library health — index vs disk, and what can't be played"
-            className="text-[12px] text-muted whitespace-nowrap text-right hover:text-fg
+            className="text-[12px] text-fg/70 whitespace-nowrap text-right hover:text-fg
                        transition-colors"
           >
             {albumCount} albums
@@ -1141,7 +1141,7 @@ export default function App() {
             {stats && stats.unplayable > 0 ? (
               <span
                 className={
-                  stats.unplayableUnacked > 0 ? "text-auburn" : "text-muted/70"
+                  stats.unplayableUnacked > 0 ? "text-auburn" : "text-fg/50"
                 }
               >
                 {" · "}
@@ -1150,7 +1150,7 @@ export default function App() {
               </span>
             ) : null}
             {lastScannedAt != null ? (
-              <span className="text-muted/70">
+              <span className="text-fg/50">
                 {" · "}
                 scanned {fmtAgo(lastScannedAt)}
               </span>
