@@ -214,6 +214,19 @@ fn meta_set(conn: &Connection, key: &str, value: &str) {
 
 fn open(app: &AppHandle) -> Result<Connection, String> {
     let conn = Connection::open(db_path(app)?).map_err(|e| e.to_string())?;
+    // Concurrency (see the scan's Tier-2 staging): WAL lets readers — the
+    // playback queries a track change fires — proceed alongside the scan's
+    // writer instead of blocking on its big rebuild transaction. NORMAL is the
+    // safe durability pairing for WAL, and a busy_timeout turns a transient
+    // lock into a short wait rather than an immediate SQLITE_BUSY error.
+    // journal_mode=WAL is persisted in the DB file (idempotent to re-set);
+    // synchronous and busy_timeout are per-connection, so set on every open.
+    conn.execute_batch(
+        "PRAGMA journal_mode = WAL;
+         PRAGMA synchronous = NORMAL;
+         PRAGMA busy_timeout = 5000;",
+    )
+    .map_err(|e| e.to_string())?;
     conn.execute_batch(SCHEMA).map_err(|e| e.to_string())?;
     // Migrate DBs created before `playable` existed (next scan repopulates it).
     let _ = conn.execute(
@@ -748,7 +761,16 @@ fn mode_or<'a>(values: impl Iterator<Item = &'a str>, default: &str) -> String {
 
 /// Rebuild the whole library index from the configured music root.
 /// Emits `scan-progress` events ({phase, done, total}) as it goes.
-#[tauri::command]
+///
+/// Tier-1 staging: `command(async)` runs this sync body on a worker thread from
+/// Tauri's runtime instead of the main thread. A plain `#[tauri::command]` fn
+/// runs on the UI thread, so on a large library (~19k tracks) the whole
+/// walk → parallel tag-read → cover extraction → DB rewrite blocked the event
+/// loop — the OS flagged the window "not responding", the progress bar couldn't
+/// repaint until it returned, and playback controls froze. Off the main thread,
+/// the emitted `scan-progress` events render live and the transport stays
+/// responsive; the rayon parallelism inside is unchanged.
+#[tauri::command(async)]
 fn scan_library(app: AppHandle) -> Result<ScanSummary, String> {
     let root = read_music_root(&app);
     let root_pb = PathBuf::from(&root);
