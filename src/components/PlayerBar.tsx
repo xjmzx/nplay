@@ -32,6 +32,7 @@ export function PlayerBar({
   const barRef = useRef<HTMLDivElement>(null);
   const [scrub, setScrub] = useState<number | null>(null);
   const seekable = !!track && duration > 0 && isFinite(duration);
+  const hasTrack = !!track;
 
   function timeFromClientX(clientX: number): number {
     const el = barRef.current;
@@ -67,46 +68,63 @@ export function PlayerBar({
     <div className="flex justify-center px-4 py-2.5 bg-panel border-t border-surface/60">
       <div className="w-1/2 min-w-[300px] max-w-full flex flex-col items-center gap-1">
         {/* Now-playing chip — title · artist · record label grouped into one
-            rounded bar above the seek. The three read as a single unit now:
+            flat filled panel above the seek. The three read as a single unit:
             one shared medium weight and size, with only opacity stepping the
             hierarchy (title brightest, label quietest) and a middot between
-            each. The bar has a min width so a one-word title still reads as a
-            proper chip, and a max width + per-segment truncation (label
+            each. The chip has a min width so a one-word title still reads as a
+            proper panel, and a max width + per-segment truncation (label
             collapses first, then artist, title last) so a long library field
-            can't blow the layout. The stroke is the fg token — near-white, so
-            it holds as a light hairline on both the fizx and upleb themes.
-            Album.label is joined from ndisc's catalogue and is null when the
-            album isn't catalogued. */}
-        <div className="flex items-center justify-center gap-2 min-w-[16rem] max-w-full px-4 py-1.5 rounded-lg border border-fg/20 bg-surface/30 text-[13px] font-medium leading-none">
-          <span className="truncate min-w-0 text-fg">{track?.title ?? "—"}</span>
-          {album?.artist && (
-            <>
-              <span className="shrink-0 text-muted/60" aria-hidden>
-                ·
-              </span>
-              <span className="truncate min-w-0 shrink-[2] text-fg/80">
-                {album.artist}
-              </span>
-            </>
+            can't blow the layout. Album.label is joined from ndisc's catalogue
+            and is null when the album isn't catalogued.
+
+            The chip is a solid flat panel (no stroke) that slides up off the
+            stage and collapses to zero height when nothing is playing, then
+            slides back in when a track starts. The wrapper animates
+            max-height + opacity + translate; overflow-hidden clips it while it
+            collapses so the seek row rises to meet the panel edge. */}
+        <div
+          className={cn(
+            "w-full overflow-hidden transition-all duration-300 ease-out",
+            hasTrack
+              ? "max-h-16 opacity-100 translate-y-0"
+              : "max-h-0 opacity-0 -translate-y-3 pointer-events-none",
           )}
-          {album?.label && (
-            <>
-              <span className="shrink-0 text-muted/60" aria-hidden>
-                ·
+        >
+          <div className="flex justify-center">
+            <div className="inline-flex items-center justify-center gap-2 min-w-[16rem] max-w-full px-4 py-1.5 rounded-lg bg-surface text-[13px] font-medium leading-none">
+              <span className="truncate min-w-0 text-fg">
+                {track?.title ?? "—"}
               </span>
-              <span
-                className="truncate min-w-0 shrink-[3] text-fg/65"
-                title={`Record label — ${album.label}`}
-              >
-                {album.label}
-              </span>
-            </>
-          )}
+              {album?.artist && (
+                <>
+                  <span className="shrink-0 text-muted/60" aria-hidden>
+                    ·
+                  </span>
+                  <span className="truncate min-w-0 shrink-[2] text-fg/80">
+                    {album.artist}
+                  </span>
+                </>
+              )}
+              {album?.label && (
+                <>
+                  <span className="shrink-0 text-muted/60" aria-hidden>
+                    ·
+                  </span>
+                  <span
+                    className="truncate min-w-0 shrink-[3] text-fg/65"
+                    title={`Record label — ${album.label}`}
+                  >
+                    {album.label}
+                  </span>
+                </>
+              )}
+            </div>
+          </div>
         </div>
 
         {/* Elapsed · seek · total · volume */}
         <div className="w-full flex items-center gap-2">
-          <span className="text-[11px] text-muted font-mono tabular-nums w-9 text-right shrink-0">
+          <span className="text-[11px] text-fg/60 font-mono tabular-nums w-9 text-right shrink-0">
             {formatTime(shown)}
           </span>
           <div
@@ -115,7 +133,7 @@ export function PlayerBar({
             onPointerMove={onPointerMove}
             onPointerUp={onPointerUp}
             className={cn(
-              "group/seek flex-1 h-1.5 bg-surface/60 relative min-w-0 touch-none",
+              "group/seek flex-1 h-1.5 bg-surfaceHover relative min-w-0 touch-none",
               seekable ? "cursor-pointer" : "cursor-default",
             )}
             title="Click or drag to seek"
@@ -136,10 +154,10 @@ export function PlayerBar({
               />
             )}
           </div>
-          <span className="text-[11px] text-muted font-mono tabular-nums w-9 shrink-0">
+          <span className="text-[11px] text-fg/60 font-mono tabular-nums w-9 shrink-0">
             {formatTime(duration)}
           </span>
-          <Volume2 size={15} className="text-muted shrink-0 ml-1" />
+          <Volume2 size={15} className="text-fg/55 shrink-0 ml-1" />
           <input
             type="range"
             min={0}
