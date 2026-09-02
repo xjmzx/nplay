@@ -7,12 +7,15 @@
 // Playback itself is done webview-side via HTMLMediaElement over the
 // asset protocol — no Rust playback command is needed.
 
+// External tools (ffmpeg/ffprobe/aubio) are resolved to an absolute path
+// before spawning — see tools.rs for why PATH alone is not enough.
+mod tools;
+
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs;
 use std::hash::{Hash, Hasher};
 use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -1907,16 +1910,10 @@ fn compute_bpm(path: &str) -> Result<f64, String> {
     if !Path::new(path).is_file() {
         return Err(format!("not a file: {path}"));
     }
-    let output = Command::new("aubio")
+    let output = tools::command("aubio")?
         .args(["tempo", path])
         .output()
-        .map_err(|e| {
-            if e.kind() == std::io::ErrorKind::NotFound {
-                "aubio not found on PATH — install aubio-tools".to_string()
-            } else {
-                format!("aubio launch failed: {e}")
-            }
-        })?;
+        .map_err(|e| format!("aubio launch failed: {e}"))?;
     if !output.status.success() {
         return Err(format!(
             "aubio failed: {}",
@@ -2007,17 +2004,11 @@ fn transcode_video_audio(src: &str, cache_dir: &Path) -> Result<PathBuf, String>
     if out.exists() && fs::metadata(&out).map(|m| m.len() > 0).unwrap_or(false) {
         return Ok(out);
     }
-    let status = Command::new("ffmpeg")
+    let status = tools::command("ffmpeg")?
         .args(["-y", "-v", "error", "-i", src, "-vn", "-c:a", "pcm_s16le"])
         .arg(&out)
         .status()
-        .map_err(|e| {
-            if e.kind() == std::io::ErrorKind::NotFound {
-                "ffmpeg not found on PATH".to_string()
-            } else {
-                format!("ffmpeg launch failed: {e}")
-            }
-        })?;
+        .map_err(|e| format!("ffmpeg launch failed: {e}"))?;
     if !status.success() {
         let _ = fs::remove_file(&out);
         return Err("ffmpeg failed to extract audio".to_string());
