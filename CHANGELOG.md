@@ -5,6 +5,34 @@ siblings (ndisc / ndisc.view / glmps), nplay is a local player and **not** a
 participant in the ndisc Nostr wire contract, so it tracks a single axis: this
 app's own semver, below.
 
+## 0.2.0-beta.5 — 2026-09-04
+
+### Windows builds
+
+- The release workflow now builds a **Windows x86_64 NSIS installer**
+  (`nplay_<version>_x64-setup.exe`) alongside the Linux `.deb`/`.AppImage` and
+  the macOS `.dmg`. The job is ndisc's, unchanged, and has already gone green
+  unmodified on nping and nchat. Like the macOS job it runs after the Linux one
+  and only appends its asset.
+- Unsigned, like the rest of the suite. SmartScreen warns on first run of a new
+  version until the download earns reputation; "More info" then "Run anyway".
+- **This installer is untested.** nplay compiles clean on Windows — verified
+  with `cargo check` against a real Windows toolchain — but no build of this app
+  has been installed or launched there. Known to build; not known to run. The
+  audio path in particular (rodio, and the FFT tapped off its sample stream) has
+  never run on Windows.
+
+### Fixed
+
+- **Spawning ffmpeg no longer flashes a console window.** Windows gives every
+  console program its own console, so each spawn popped one over the app and took
+  focus; a pass that shells out once per file looked exactly like the window
+  redrawing itself in a loop. `tools.rs` now builds its Commands through
+  `quiet_command()`, which sets `CREATE_NO_WINDOW`. Not verified at runtime —
+  it needs the app running against real media.
+- `install_hint` stopped telling Windows users to `apt install ffmpeg`; it now
+  points at `winget` and notes that PATH changes need an app restart.
+
 ## 0.2.0-beta.4 — 2026-09-02
 
 ### macOS builds
