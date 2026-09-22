@@ -5,6 +5,34 @@ siblings (ndisc / ndisc.view / glmps), nplay is a local player and **not** a
 participant in the ndisc Nostr wire contract, so it tracks a single axis: this
 app's own semver, below.
 
+## 0.2.0-beta.6 — 2026-09-22
+
+### Fixed — accented titles were invisible to search
+
+Tags arrive in whichever Unicode normalisation the tagger wrote. Eight track
+titles in the maintainer's library are stored **NFD** — `Começo` as `o` +
+U+0327 rather than the single codepoint — which renders identically but is a
+different string. The substring filter compared raw strings, so searching for
+`Começo` as a keyboard types it (NFC) matched **nothing**, while the
+unaccented stem `Come` matched. Affected *Começo*, *Primeira Missão*,
+*Náusea*, *Perseguição*, *Terceira Missão*, *Segunda missão*, *Aquí, Port
+Lligat* and *Bergmál Tímans*.
+
+- The scanner now stores tag text as **NFC** (`tag_text` in `src-tauri`), so
+  newly scanned rows are consistent — and so these titles also stop sorting
+  and grouping apart from their neighbours.
+- Search normalises **both sides at comparison time** (`src/lib/search.ts`),
+  not just the stored value. This is what makes the eight findable
+  immediately, without waiting for a rescan, and it keeps working for rows
+  ingested by older versions.
+
+**Paths are deliberately left alone.** A filename on Linux is a byte string
+with no canonical equivalence at the filesystem layer: this library contains
+one genuinely NFD filename, and rewriting its stored path to NFC would yield a
+path that does not exist. Text is normalised; paths are kept verbatim. The
+reasoning is written up in ndisc's
+`schema/identity-normalisation-design-2026-09-22.md`.
+
 ## 0.2.0-beta.5 — 2026-09-04
 
 ### Windows builds

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowDown, ArrowUp, Pencil, Search } from "lucide-react";
 import { cn } from "../lib/cn";
+import { matches, searchKey } from "../lib/search";
 import { formatTime } from "../lib/format";
 import {
   listAllTracks,
@@ -106,13 +107,11 @@ export function TableView({
 
   // Substring filter over artist / album / title, applied before sort.
   const filtered = useMemo(() => {
-    const q = filter.trim().toLowerCase();
+    const q = searchKey(filter.trim());
     if (!q) return rows;
     return rows.filter(
       (t) =>
-        t.title.toLowerCase().includes(q) ||
-        t.artist.toLowerCase().includes(q) ||
-        t.album.toLowerCase().includes(q),
+        matches(t.title, q) || matches(t.artist, q) || matches(t.album, q),
     );
   }, [rows, filter]);
 

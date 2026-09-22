@@ -24,6 +24,7 @@ use lofty::config::{ParseOptions, ParsingMode};
 use lofty::file::{AudioFile, TaggedFileExt};
 use lofty::probe::Probe;
 use lofty::tag::ItemKey;
+use unicode_normalization::UnicodeNormalization;
 use rayon::prelude::*;
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
@@ -467,6 +468,28 @@ fn ext_upper(p: &Path) -> Option<String> {
         .map(|s| s.to_uppercase())
 }
 
+/// Trim a tag value and normalise it to **NFC**.
+///
+/// Tags arrive in whichever normalisation the tagger wrote. A handful of this
+/// library's FLACs carry NFD titles (`Começo` as `o` + U+0327), which look
+/// identical on screen but are different strings — so the substring search
+/// missed them entirely when the query was typed in NFC, and they sorted and
+/// grouped apart from their neighbours.
+///
+/// NFC is *canonical equivalence*: it does not change the text, only its
+/// encoding, so this is safe to store. Note the deliberate asymmetry with
+/// **paths**, which are never normalised — a filename on Linux is a byte
+/// string with no canonical equivalence, and rewriting one to NFC yields a
+/// path that does not exist. Text gets normalised; paths are kept verbatim.
+fn tag_text(s: &str) -> Option<String> {
+    let t: String = s.trim().nfc().collect();
+    if t.is_empty() {
+        None
+    } else {
+        Some(t)
+    }
+}
+
 fn read_meta(path: &Path) -> FileMeta {
     let dir = path.parent().map(Path::to_path_buf).unwrap_or_default();
     let mut m = FileMeta {
@@ -504,19 +527,12 @@ fn read_meta(path: &Path) -> FileMeta {
     };
 
     if let Some(tag) = tagged.primary_tag().or_else(|| tagged.first_tag()) {
-        m.title = tag
-            .get_string(&ItemKey::TrackTitle)
-            .map(|s| s.trim().to_owned())
-            .filter(|s| !s.is_empty());
+        m.title = tag.get_string(&ItemKey::TrackTitle).and_then(tag_text);
         m.artist = tag
             .get_string(&ItemKey::AlbumArtist)
             .or_else(|| tag.get_string(&ItemKey::TrackArtist))
-            .map(|s| s.trim().to_owned())
-            .filter(|s| !s.is_empty());
-        m.album = tag
-            .get_string(&ItemKey::AlbumTitle)
-            .map(|s| s.trim().to_owned())
-            .filter(|s| !s.is_empty());
+            .and_then(tag_text);
+        m.album = tag.get_string(&ItemKey::AlbumTitle).and_then(tag_text);
         m.year = tag
             .get_string(&ItemKey::Year)
             .or_else(|| tag.get_string(&ItemKey::RecordingDate))

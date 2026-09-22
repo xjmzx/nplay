@@ -8,6 +8,7 @@ import {
   Plus,
 } from "lucide-react";
 import { cn } from "../lib/cn";
+import { matches, searchKey } from "../lib/search";
 import { COLLECTION_DND } from "../lib/dnd";
 import { formatTime } from "../lib/format";
 import { listAlbumTracks, type Album, type Track } from "../lib/tauri";
@@ -121,14 +122,12 @@ function LibraryTreeImpl({
       // "artist" keeps the backend (year, album) order.
     }
 
-    const f = filter.trim().toLowerCase();
+    const f = searchKey(filter.trim());
     if (!f) return out;
     return out
       .map((g) => {
-        if (g.artist.toLowerCase().includes(f)) return g;
-        const albums = g.albums.filter((al) =>
-          al.album.toLowerCase().includes(f),
-        );
+        if (matches(g.artist, f)) return g;
+        const albums = g.albums.filter((al) => matches(al.album, f));
         return albums.length ? { artist: g.artist, albums } : null;
       })
       .filter((g): g is ArtistGroup => g !== null);
