@@ -5,6 +5,25 @@ siblings (ndisc / ndisc.view / glmps), nplay is a local player and **not** a
 participant in the ndisc Nostr wire contract, so it tracks a single axis: this
 app's own semver, below.
 
+## 0.3.1 — 2026-09-26
+
+### Added — a "Last year" filter on the Collection
+
+A toggle after the labels dropdown that keeps only albums released this
+calendar year or last. The year tag is the only date the library holds, so
+this is year-precise rather than a rolling twelve months, and albums with no
+year drop out while it is on. Artists auto-expand, like the other filters.
+
+### Fixed — `make uninstall` left a stale icon cache
+
+It removed `nplay.svg` but not the `~/.local` hicolor cache entry that
+`make install` had written, so the shell kept resolving the icon to a missing
+file and a `.deb` install of the same app showed no icon.
+
+## 0.3.0 — 2026-09-22
+
+Off the beta train. An icon export now rebuilds the binary.
+
 ## 0.2.0-beta.6 — 2026-09-22
 
 ### Fixed — accented titles were invisible to search
