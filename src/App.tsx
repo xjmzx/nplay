@@ -3,6 +3,7 @@ import { getVersion } from "@tauri-apps/api/app";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import {
   AudioLines,
+  CalendarClock,
   ChevronDown,
   Film,
   FolderOpen,
@@ -28,7 +29,7 @@ import { cn } from "./lib/cn";
 import { Section } from "./components/Section";
 import { CollapsedStrip } from "./components/CollapsedStrip";
 import { CurrentView } from "./components/CurrentView";
-import { LibraryTree, type SortKey } from "./components/LibraryTree";
+import { LibraryTree, recentSince, type SortKey } from "./components/LibraryTree";
 import { NowPlaying } from "./components/NowPlaying";
 import { PlayerBar } from "./components/PlayerBar";
 import { Playlist, type PlaylistSortKey } from "./components/Playlist";
@@ -269,6 +270,7 @@ export default function App() {
   const [sort, setSort] = useState<SortKey>("artist");
   const [filter, setFilter] = useState("");
   const [videoOnly, setVideoOnly] = useState(false);
+  const [recentOnly, setRecentOnly] = useState(false);
   // Record-label filter over the Collection. Labels are joined from ndisc's
   // catalogue export, so the list is empty until that manifest exists.
   const [labelFilter, setLabelFilter] = useState("");
@@ -1312,6 +1314,19 @@ export default function App() {
                   />
                 </div>
               )}
+              <button
+                onClick={() => setRecentOnly((v) => !v)}
+                title={`Show only albums released in ${recentSince()} or later (by year tag)`}
+                aria-pressed={recentOnly}
+                className={cn(
+                  "flex items-center gap-1 px-2 py-1 text-[11px] shrink-0 transition-colors",
+                  recentOnly
+                    ? "bg-accent/20 text-accent"
+                    : "bg-surface/60 text-muted hover:text-fg/80",
+                )}
+              >
+                <CalendarClock size={12} /> Last year
+              </button>
             </div>
             <div className="flex-1 min-h-0 overflow-y-auto pr-1 [scrollbar-gutter:stable]">
               {loadingAlbums ? (
@@ -1328,6 +1343,7 @@ export default function App() {
                   filter={filter}
                   videoOnly={videoOnly}
                   labelFilter={labelFilter}
+                  recentOnly={recentOnly}
                 />
               )}
             </div>

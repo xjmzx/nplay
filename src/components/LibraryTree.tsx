@@ -70,12 +70,19 @@ interface LibraryTreeProps {
   /** Restrict to albums on this record label ("" = all). Label comes from
    *  ndisc's catalogue export, so albums ndisc doesn't know are excluded. */
   labelFilter: string;
+  /** Restrict to albums released this calendar year or last. Year is the
+   *  only date the library holds (from tags), so "the last 12 months" is
+   *  year-precise; albums with no year are excluded. */
+  recentOnly: boolean;
 }
 
 interface ArtistGroup {
   artist: string;
   albums: Album[];
 }
+
+/** First release year the "Last year" filter keeps: last calendar year. */
+export const recentSince = () => new Date().getFullYear() - 1;
 
 // Memoized: the Collection is the heaviest panel; keeping it out of the app's
 // 250ms position-tick re-render (its props are referentially stable between
@@ -91,6 +98,7 @@ function LibraryTreeImpl({
   filter,
   videoOnly,
   labelFilter,
+  recentOnly,
 }: LibraryTreeProps) {
   // Group by artist (backend already sorts by artist, year, album), then
   // re-order each group's albums by the chosen sort and apply the filter.
@@ -98,7 +106,11 @@ function LibraryTreeImpl({
     const byLabel = labelFilter
       ? albums.filter((a) => a.label === labelFilter)
       : albums;
-    const source = videoOnly ? byLabel.filter((a) => a.hasVideo) : byLabel;
+    const byVideo = videoOnly ? byLabel.filter((a) => a.hasVideo) : byLabel;
+    const since = recentSince();
+    const source = recentOnly
+      ? byVideo.filter((a) => a.year !== null && a.year >= since)
+      : byVideo;
     const out: ArtistGroup[] = [];
     let last: ArtistGroup | null = null;
     for (const a of source) {
@@ -131,11 +143,12 @@ function LibraryTreeImpl({
         return albums.length ? { artist: g.artist, albums } : null;
       })
       .filter((g): g is ArtistGroup => g !== null);
-  }, [albums, sort, filter, videoOnly, labelFilter]);
+  }, [albums, sort, filter, videoOnly, labelFilter, recentOnly]);
 
-  // Auto-expand artists when narrowing (text filter, video-only or label) so the
+  // Auto-expand artists when narrowing (text filter, video-only, label or recent) so the
   // (usually few) matches are visible without manual drilling.
-  const filtering = filter.trim().length > 0 || videoOnly || labelFilter !== "";
+  const filtering =
+    filter.trim().length > 0 || videoOnly || labelFilter !== "" || recentOnly;
 
   const [openArtists, setOpenArtists] = useState<Set<string>>(new Set());
   const [openAlbums, setOpenAlbums] = useState<Set<number>>(new Set());
