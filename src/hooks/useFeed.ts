@@ -14,8 +14,7 @@ import {
 // (lib/feed.ts), identical to ndisc / ndisc.view / glmps.
 const RELAYS = [
   "wss://relay.fizx.uk",
-  "wss://nos.lol",
-  "wss://relay.primal.net",
+  "wss://relay.nfunc.xyz",
 ];
 
 export interface FeedState {
