@@ -5,6 +5,15 @@ siblings (ndisc / ndisc.view / glmps), nplay is a local player and **not** a
 participant in the ndisc Nostr wire contract, so it tracks a single axis: this
 app's own semver, below.
 
+## 0.3.2 — 2026-10-03
+
+### Changed — the feed is read from our own relays only
+
+The Current view now reads the feed channel from `relay.fizx.uk` and its
+mirror `relay.nfunc.xyz`. `nos.lol` and `relay.primal.net` are dropped,
+matching ndisc's defaults. Also carries the 2026-09-29 icon export and a
+`.deb`-only release (no AppImage).
+
 ## 0.3.1 — 2026-09-26
 
 ### Added — a "Last year" filter on the Collection
