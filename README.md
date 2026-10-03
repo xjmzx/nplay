@@ -15,9 +15,9 @@ WebKit2GTK can't play local media — while video plays in a webview
 The library is indexed into SQLite (`rusqlite`) with tags + embedded
 covers read via `lofty`.
 
-> **Status: beta (v0.2.0-beta.1).** Playlists, video playback, BPM, a
-> spectrum visualiser and a sortable table view are all in; see the
-> CHANGELOG for the running roadmap.
+> **Status: v0.3.1.** Playlists, video playback, BPM, a spectrum
+> visualiser and a sortable table view are all in; see the CHANGELOG for
+> the running roadmap.
 
 ## Features
 
