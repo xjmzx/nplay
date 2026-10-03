@@ -12,6 +12,7 @@ import {
   ListPlus,
   Loader2,
   Music,
+  MicVocal,
   Pause,
   Play,
   Radio,
@@ -31,6 +32,7 @@ import { CollapsedStrip } from "./components/CollapsedStrip";
 import { CurrentView } from "./components/CurrentView";
 import { LibraryTree, recentSince, type SortKey } from "./components/LibraryTree";
 import { NowPlaying } from "./components/NowPlaying";
+import { Lyrics, LyricsEditor } from "./components/Lyrics";
 import { PlayerBar } from "./components/PlayerBar";
 import { Playlist, type PlaylistSortKey } from "./components/Playlist";
 import { ScanProgressBar, scanStatusText } from "./components/ScanProgressBar";
@@ -61,6 +63,9 @@ import {
   setMusicRoot,
   trackBpm,
   type TrackBpm,
+  trackLyrics,
+  saveTrackLyrics,
+  type LyricsFile,
   tracksByPaths,
   writeTextFile,
   type Album,
@@ -345,6 +350,49 @@ export default function App() {
       alive = false;
     };
   }, [current?.id]);
+
+  // Lyrics for the current track: a sidecar file beside it (`<track>.lrc`, or
+  // `.txt`). Read from disk each time the track changes — nothing is cached or
+  // stored, so adding or editing the file takes effect on the next play.
+  const [lyrics, setLyrics] = useState<LyricsFile | null>(null);
+  const [lyricsCollapsed, setLyricsCollapsed] = usePersistedBool("nplay.lyrics.collapsed");
+  // An edit in progress is pinned to the track it was started for, not to
+  // whatever is playing: if playback moves on mid-paste the draft stays put and
+  // still saves beside the right file.
+  const [lyricsEdit, setLyricsEdit] = useState<{
+    path: string;
+    title: string;
+    initial: string;
+  } | null>(null);
+  const lyricsOpen = lyricsEdit !== null || (lyrics !== null && !lyricsCollapsed);
+  const startLyricsEdit = () => {
+    if (!current) return;
+    setLyricsEdit({ path: current.path, title: current.title, initial: lyrics?.text ?? "" });
+  };
+  const saveLyricsEdit = async (text: string) => {
+    if (!lyricsEdit) return;
+    const written = await saveTrackLyrics(lyricsEdit.path, text);
+    // Show the result straight away if that track is still the one playing.
+    if (current?.path === lyricsEdit.path) {
+      setLyrics({ path: written, text });
+      setLyricsCollapsed(false);
+    }
+    setLyricsEdit(null);
+  };
+  useEffect(() => {
+    setLyrics(null);
+    const path = current?.path;
+    if (!path) return;
+    let alive = true;
+    trackLyrics(path)
+      .then((v) => {
+        if (alive) setLyrics(v);
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [current?.path]);
 
   // --- data loading ---------------------------------------------------------
   async function refreshAlbums() {
@@ -1410,8 +1458,48 @@ export default function App() {
                 volume={volume}
                 elRef={videoElRef}
                 bpm={bpm}
+                compact={lyricsOpen}
+                onAddLyrics={current && !lyrics && !lyricsEdit ? startLyricsEdit : undefined}
               />
             </Section>
+            {/* Lyrics appear only for a track that has a sidecar file. Open,
+                they need real height, and this column has none to spare: the
+                art and its captions already fill it. So open lyrics halve the
+                art (NowPlaying `compact`) and stand in for the spectrum;
+                collapsed, they are a header and everything is as it was. */}
+            {(lyrics || lyricsEdit) && (
+              <Section
+                title={lyrics ? `Lyrics — ${lyrics.path.split(/[\\/]/).pop()}` : "Lyrics"}
+                icon={<MicVocal size={15} />}
+                iconOnly
+                elastic={lyricsOpen}
+                className={lyricsOpen ? "flex-1 min-h-[10rem]" : undefined}
+                // Collapsing mid-edit would hide a draft; the editor has its
+                // own Cancel.
+                onTitleClick={lyricsEdit ? undefined : () => setLyricsCollapsed(!lyricsCollapsed)}
+              >
+                {lyricsEdit ? (
+                  <LyricsEditor
+                    key={lyricsEdit.path}
+                    trackTitle={lyricsEdit.title}
+                    initial={lyricsEdit.initial}
+                    onSave={saveLyricsEdit}
+                    onCancel={() => setLyricsEdit(null)}
+                  />
+                ) : (
+                  lyricsOpen &&
+                  lyrics && (
+                    <Lyrics
+                      text={lyrics.text}
+                      currentTime={currentTime}
+                      onSeek={seek}
+                      onEdit={startLyricsEdit}
+                    />
+                  )
+                )}
+              </Section>
+            )}
+            {!lyricsOpen && (
             <Section
               title="Spectrum"
               icon={<AudioLines size={15} />}
@@ -1425,6 +1513,7 @@ export default function App() {
                 <Spectrum mode={spectrumMode} />
               </div>
             </Section>
+            )}
           </div>
         )}
       </div>

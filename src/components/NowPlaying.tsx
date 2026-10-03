@@ -1,5 +1,5 @@
 import { useEffect, useState, type RefObject } from "react";
-import { Film, Maximize2, Music4 } from "lucide-react";
+import { Film, Maximize2, MicVocal, Music4 } from "lucide-react";
 import { cn } from "../lib/cn";
 import {
   fileSrc,
@@ -23,6 +23,12 @@ interface NowPlayingProps {
   /** BPM for the current track (with its source), or null while pending or
    *  undetectable. */
   bpm: TrackBpm | null;
+  /** Lay the panel out as one short row — a thumbnail with the captions
+   *  beside it. Set while the lyrics panel is open: stacked at full size, the
+   *  art and its captions fill the column and leave the lyrics no height. */
+  compact?: boolean;
+  /** Offered when the track has no lyrics file yet: start one. */
+  onAddLyrics?: () => void;
 }
 
 // The unified stage: the media square shows album art for audio and the live
@@ -38,12 +44,16 @@ export function NowPlaying({
   volume,
   elRef,
   bpm,
+  compact,
+  onAddLyrics,
 }: NowPlayingProps) {
   const cover = album?.coverPath ?? null;
   const [errored, setErrored] = useState<string | null>(null);
   const [videoError, setVideoError] = useState(false);
   const showImage = cover && errored !== cover;
   const showVideo = isPlayableVideo && !!mediaBase;
+  // A video keeps its full stage — it is the thing being watched.
+  const row = !!compact && !showVideo;
 
   // The art lags `cover` by design: on Stop, `cover` goes null but the last
   // image stays mounted at opacity 0 so it can fade *out* rather than being
@@ -72,7 +82,7 @@ export function NowPlaying({
   }
 
   return (
-    <div className="flex flex-col items-center gap-3">
+    <div className={cn("flex gap-3", row ? "flex-row items-center" : "flex-col items-center")}>
       {showVideo ? (
         <div className="group/vid relative w-full aspect-video max-h-[55vh] mx-auto rounded-xl bg-surface/40 border border-surface/60 overflow-hidden shadow-inner">
           {/* object-contain over the grey panel tone: a clip smaller than the
@@ -107,7 +117,12 @@ export function NowPlaying({
       ) : (
         // The frame is the constant — it holds the panel's shape so stopping
         // never collapses the layout. Everything inside cross-fades over it.
-        <div className="relative w-full max-w-[18rem] aspect-square rounded-xl bg-surface/40 border border-surface/60 overflow-hidden shadow-inner">
+        <div
+          className={cn(
+            "relative aspect-square bg-surface/40 border border-surface/60 overflow-hidden shadow-inner",
+            row ? "w-24 shrink-0 rounded-lg" : "w-full max-w-[18rem] rounded-xl",
+          )}
+        >
           {/* Glyph = "this release has no cover art", NOT "nothing playing" —
               the caption below already says that, so idle shows a bare frame. */}
           <div
@@ -117,9 +132,9 @@ export function NowPlaying({
             )}
           >
             {track?.isVideo ? (
-              <Film size={64} className="text-muted/40" strokeWidth={1.2} />
+              <Film size={row ? 32 : 64} className="text-muted/40" strokeWidth={1.2} />
             ) : (
-              <Music4 size={64} className="text-muted/40" strokeWidth={1.2} />
+              <Music4 size={row ? 32 : 64} className="text-muted/40" strokeWidth={1.2} />
             )}
           </div>
 
@@ -140,14 +155,20 @@ export function NowPlaying({
 
       {/* No idle caption: the empty frame says "nothing playing" on its own. */}
       {track && (
-        <div className="w-full text-center px-1">
+        // In the row layout every caption truncates against `min-w-0`, so a
+        // long title shortens with an ellipsis instead of pushing the column
+        // wider or clipping; the full text stays in each line's tooltip.
+        <div className={cn(row ? "min-w-0 flex-1 text-left" : "w-full text-center px-1")}>
           <div className="font-medium text-fg truncate" title={track.title}>
             {track.title}
           </div>
           <div className="text-sm text-fg/70 truncate" title={album?.artist}>
             {album?.artist ?? ""}
           </div>
-          <div className="text-[13px] text-fg/65 truncate">
+          <div
+            className="text-[13px] text-fg/65 truncate"
+            title={album ? `${album.album}${album.year != null ? ` · ${album.year}` : ""}` : undefined}
+          >
             {album?.album}
             {album?.year != null ? ` · ${album.year}` : ""}
           </div>
@@ -158,7 +179,12 @@ export function NowPlaying({
               container fact, and it's the one value here a human can assert
               (mauve = the suite's BPM colour, matching nsmpl's BPM chip). */}
           {(specs.length > 0 || bpm != null) && (
-            <div className="mt-2.5 flex flex-wrap items-center justify-center gap-x-2 gap-y-1.5 text-[13px] font-medium tabular-nums">
+            <div
+              className={cn(
+                "flex flex-wrap items-center gap-x-2 gap-y-1 font-medium tabular-nums",
+                row ? "mt-1 justify-start text-xs" : "mt-2.5 justify-center text-[13px] gap-y-1.5",
+              )}
+            >
               {specs.map((s, i) => (
                 <span key={s} className="flex items-center gap-x-2">
                   {i > 0 && <span className="text-muted/50">·</span>}
@@ -202,6 +228,15 @@ export function NowPlaying({
                   );
                 })()}
             </div>
+          )}
+          {onAddLyrics && (
+            <button
+              onClick={onAddLyrics}
+              title="Add lyrics for this track — saved as a .lrc file beside it"
+              className="mt-2 inline-flex items-center gap-1 text-[11px] text-muted/70 hover:text-accent transition-colors"
+            >
+              <MicVocal size={12} /> add lyrics
+            </button>
           )}
           {track.isVideo && !showVideo && (
             <div className="mt-1.5 text-[11px] text-muted/70">

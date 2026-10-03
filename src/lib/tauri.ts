@@ -179,6 +179,23 @@ export function writeTextFile(path: string, contents: string): Promise<void> {
   return invoke("write_text_file", { path, contents });
 }
 
+export interface LyricsFile {
+  /** The sidecar that was read (`<track>.lrc` or `.txt`). */
+  path: string;
+  text: string;
+}
+
+/** The lyrics sidecar beside a track, or null when it has none. */
+export function trackLyrics(path: string): Promise<LyricsFile | null> {
+  return invoke("track_lyrics", { path });
+}
+
+/** Write a track's lyrics beside it: rewrites the existing sidecar, or creates
+ *  `<track>.lrc`. Resolves with the file written. */
+export function saveTrackLyrics(path: string, text: string): Promise<string> {
+  return invoke("save_track_lyrics", { path, text });
+}
+
 export function defaultPlaylistDir(): Promise<string> {
   return invoke("default_playlist_dir");
 }

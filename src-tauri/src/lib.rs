@@ -1600,6 +1600,125 @@ fn write_text_file(path: String, contents: String) -> Result<(), String> {
     fs::write(&path, contents).map_err(|e| format!("{path}: {e}"))
 }
 
+// --- Lyrics (sidecar files) --------------------------------------------------
+//
+// Lyrics are a plain file beside the track: `<track stem>.lrc`, or `.txt` as a
+// fallback. Nothing is stored in the library DB and nothing is ever published —
+// the library folder is the one place every suite app already meets, so a
+// sidecar needs no schema, no migration and no wire contract. The scanner
+// ignores these files (it only picks up audio, video and image extensions).
+
+/// A lyric file is text; anything bigger than this is something else that
+/// happens to share the track's name.
+const LYRICS_MAX_BYTES: u64 = 1024 * 1024;
+
+#[derive(Serialize)]
+struct Lyrics {
+    /// The sidecar that was read, so the UI can name it.
+    path: String,
+    text: String,
+}
+
+/// Decode a lyric file without trusting it to be UTF-8: `.lrc` files in the
+/// wild are often UTF-16 (with a BOM) or a legacy 8-bit encoding. BOMs are
+/// honoured; anything else is read as UTF-8 with bad bytes replaced rather
+/// than refused, since a few wrong accents beat no lyrics.
+fn decode_text(bytes: &[u8]) -> String {
+    let utf16 = |b: &[u8], be: bool| {
+        let units: Vec<u16> = b
+            .chunks_exact(2)
+            .map(|c| if be { u16::from_be_bytes([c[0], c[1]]) } else { u16::from_le_bytes([c[0], c[1]]) })
+            .collect();
+        String::from_utf16_lossy(&units)
+    };
+    match bytes {
+        [0xEF, 0xBB, 0xBF, rest @ ..] => String::from_utf8_lossy(rest).into_owned(),
+        [0xFF, 0xFE, rest @ ..] => utf16(rest, false),
+        [0xFE, 0xFF, rest @ ..] => utf16(rest, true),
+        _ => String::from_utf8_lossy(bytes).into_owned(),
+    }
+}
+
+#[cfg(test)]
+mod lyrics_tests {
+    use super::decode_text;
+
+    #[test]
+    fn decodes_by_bom_and_survives_bad_bytes() {
+        assert_eq!(decode_text(b"[00:01.00]plain"), "[00:01.00]plain");
+        assert_eq!(decode_text(b"\xEF\xBB\xBF[ti:x]"), "[ti:x]");
+        assert_eq!(decode_text(b"\xFF\xFEh\x00i\x00"), "hi");
+        assert_eq!(decode_text(b"\xFE\xFF\x00h\x00i"), "hi");
+        // Latin-1 "café": the bad byte is replaced, the rest is kept.
+        assert_eq!(decode_text(b"caf\xE9 au lait"), "caf\u{FFFD} au lait");
+    }
+}
+
+/// The extensions a lyrics sidecar may carry, in the order they are tried.
+const LYRICS_EXTS: &[&str] = &["lrc", "LRC", "txt"];
+
+/// The sidecars that exist beside `track`, in lookup order. Never the track
+/// itself (a `.txt` "track" cannot exist, but the guard is cheaper than the
+/// argument).
+fn lyrics_sidecars(track: &Path) -> Vec<PathBuf> {
+    LYRICS_EXTS
+        .iter()
+        .map(|ext| track.with_extension(ext))
+        .filter(|side| side != track && side.is_file())
+        .collect()
+}
+
+/// The lyrics sidecar for a track, or `None` if it has none. `path` is the
+/// track's own file; only its siblings `<stem>.lrc` / `<stem>.txt` are looked at.
+#[tauri::command]
+async fn track_lyrics(path: String) -> Result<Option<Lyrics>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        for side in lyrics_sidecars(Path::new(&path)) {
+            let Ok(meta) = fs::metadata(&side) else { continue };
+            if meta.len() > LYRICS_MAX_BYTES {
+                continue;
+            }
+            let Ok(bytes) = fs::read(&side) else { continue };
+            let text = decode_text(&bytes);
+            if text.trim().is_empty() {
+                continue;
+            }
+            return Some(Lyrics { path: side.to_string_lossy().into_owned(), text });
+        }
+        None
+    })
+    .await
+    .map_err(|e| e.to_string())
+}
+
+/// Write a track's lyrics. An existing sidecar is rewritten in place (a `.txt`
+/// stays a `.txt`); otherwise `<stem>.lrc` is created beside the track. This is
+/// the only file nplay ever writes into the library, and it can only land next
+/// to a track that exists — the path is derived here, never taken from the
+/// webview. Returns the sidecar written.
+#[tauri::command]
+async fn save_track_lyrics(path: String, text: String) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let track = Path::new(&path);
+        if !track.is_file() {
+            return Err(format!("{path}: no such track"));
+        }
+        let side = lyrics_sidecars(track)
+            .into_iter()
+            .next()
+            .unwrap_or_else(|| track.with_extension("lrc"));
+        if side == track {
+            return Err("refusing to overwrite the track itself".to_string());
+        }
+        // One trailing newline, LF endings: a text file other tools open cleanly.
+        let body = format!("{}\n", text.replace("\r\n", "\n").trim_end());
+        fs::write(&side, body).map_err(|e| format!("{}: {e}", side.display()))?;
+        Ok(side.to_string_lossy().into_owned())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 /// Default folder for playlist files — the user's Strawberry playlist dir.
 #[tauri::command]
 fn default_playlist_dir(app: AppHandle) -> Result<String, String> {
@@ -2636,6 +2755,8 @@ pub fn run() {
             set_track_field,
             read_text_file,
             write_text_file,
+            track_lyrics,
+            save_track_lyrics,
             default_playlist_dir,
             library_db_path,
             track_bpm,

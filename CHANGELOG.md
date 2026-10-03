@@ -5,6 +5,27 @@ siblings (ndisc / ndisc.view / glmps), nplay is a local player and **not** a
 participant in the ndisc Nostr wire contract, so it tracks a single axis: this
 app's own semver, below.
 
+## Unreleased
+
+### Added — lyrics, from a file beside the track
+
+A track with a lyrics file next to it — `<track name>.lrc`, or `.txt` — now
+shows a Lyrics panel in the now-playing column. A file with time stamps
+(`[01:23.45]words`) follows playback: the current line is lit and kept centred,
+and clicking a line seeks to it. A plain file is shown as a static sheet.
+
+While lyrics are open the now-playing panel becomes one short row (thumbnail
+with the captions beside it) and the lyrics take the spectrum's place; collapse
+the Lyrics header and everything is as before.
+
+Lyrics can be added or edited in the app: "add lyrics" under a track's details,
+or the pencil on displayed lyrics. Saving writes the `.lrc` beside the track
+under the track's own name. This is the only file nplay writes into the
+library, and it can only land next to a track that exists.
+
+Nothing is stored in the library database and nothing is published. The
+scanner ignores these files.
+
 ## 0.3.2 — 2026-10-03
 
 ### Changed — the feed is read from our own relays only
