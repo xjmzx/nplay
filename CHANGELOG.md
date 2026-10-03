@@ -5,7 +5,7 @@ siblings (ndisc / ndisc.view / glmps), nplay is a local player and **not** a
 participant in the ndisc Nostr wire contract, so it tracks a single axis: this
 app's own semver, below.
 
-## Unreleased
+## 0.3.3 — 2026-10-04
 
 ### Added — lyrics, from a file beside the track
 
