@@ -12,10 +12,7 @@ import {
 // Nostr identity and never publishes. Fixed relay set (the suite default); no
 // relay-config UI here. The parse + trust-gate maths is the shared template
 // (lib/feed.ts), identical to ndisc / ndisc.view / glmps.
-const RELAYS = [
-  "wss://relay.fizx.uk",
-  "wss://relay.nfunc.xyz",
-];
+const RELAYS = ["wss://relay.nfunc.xyz"];
 
 export interface FeedState {
   notes: FeedNote[];

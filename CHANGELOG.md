@@ -5,6 +5,14 @@ siblings (ndisc / ndisc.view / glmps), nplay is a local player and **not** a
 participant in the ndisc Nostr wire contract, so it tracks a single axis: this
 app's own semver, below.
 
+## Unreleased
+
+### Changed — relay.fizx.uk removed
+
+The fizx.uk server is gone, so the Current view's feed now reads from
+`wss://relay.nfunc.xyz` alone. Nothing was persisted — the relay set is fixed
+in code.
+
 ## 0.3.3 — 2026-10-04
 
 ### Added — lyrics, from a file beside the track
