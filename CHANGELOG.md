@@ -5,7 +5,7 @@ siblings (ndisc / ndisc.view / glmps), nplay is a local player and **not** a
 participant in the ndisc Nostr wire contract, so it tracks a single axis: this
 app's own semver, below.
 
-## Unreleased
+## 0.3.4 — 2026-11-05
 
 ### Changed — relay.fizx.uk removed
 
