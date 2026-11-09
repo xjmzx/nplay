@@ -5,6 +5,26 @@ siblings (ndisc / ndisc.view / glmps), nplay is a local player and **not** a
 participant in the ndisc Nostr wire contract, so it tracks a single axis: this
 app's own semver, below.
 
+## 0.3.5 — 2026-11-10
+
+### Added — Home: recent releases as covers
+
+A Home section now opens first in the player view: every release from the past
+year as a cover grid, grouped by year, newest first. Click a cover to play the
+album; the corner + adds it to the playlist, and a tile drags onto the playlist
+like a Collection row. The header search narrows it too.
+
+The window rolls with the date. Tags carry only a year, so Home shows releases
+from the year twelve months back onward: 2025 and 2026 today, 2026 and 2027 from
+1 January. Home is always expanded at launch; collapsing it lasts for the
+session.
+
+### Fixed — covers extracted from tags didn't show
+
+A cover pulled out of a file's tags is cached under `~/.cache`, and the asset
+scope skipped hidden folders, so those covers stayed blank (Now playing
+included). The scope now allows them.
+
 ## 0.3.4 — 2026-11-05
 
 ### Changed — relay.fizx.uk removed

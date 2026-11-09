@@ -8,6 +8,7 @@ import {
   Film,
   FolderOpen,
   Home,
+  LayoutGrid,
   ListMusic,
   ListPlus,
   Loader2,
@@ -31,6 +32,7 @@ import { Section } from "./components/Section";
 import { CollapsedStrip } from "./components/CollapsedStrip";
 import { CurrentView } from "./components/CurrentView";
 import { LibraryTree, recentSince, type SortKey } from "./components/LibraryTree";
+import { HomeGrid } from "./components/HomeGrid";
 import { NowPlaying } from "./components/NowPlaying";
 import { Lyrics, LyricsEditor } from "./components/Lyrics";
 import { PlayerBar } from "./components/PlayerBar";
@@ -280,6 +282,9 @@ export default function App() {
   // catalogue export, so the list is empty until that manifest exists.
   const [labelFilter, setLabelFilter] = useState("");
   const [labels, setLabels] = useState<LabelCount[]>([]);
+  // Home is the opening screen: always expanded at launch, whatever it was
+  // left as. Its collapse state lives for the session only.
+  const [homeCollapsed, setHomeCollapsed] = useState(false);
   const [colCollapsed, setColCollapsed] = usePersistedBool("nplay.col.collapsed");
   const [plCollapsed, setPlCollapsed] = usePersistedBool("nplay.playlist.collapsed");
   const [npCollapsed, setNpCollapsed] = usePersistedBool("nplay.nowplaying.collapsed");
@@ -1014,6 +1019,7 @@ export default function App() {
   // Collection + Playlist share the same 1fr default so they're equal width;
   // both grow equally when a neighbour collapses.
   const mainCols = [
+    homeCollapsed ? "2.5rem" : "minmax(0, 1.15fr)",
     colCollapsed ? "2.5rem" : "minmax(0, 1fr)",
     plCollapsed ? "2.5rem" : "minmax(0, 1fr)",
     npCollapsed ? "2.5rem" : "minmax(300px, 0.78fr)",
@@ -1282,6 +1288,40 @@ export default function App() {
         className="flex-1 min-h-0 grid gap-4 p-4"
         style={{ gridTemplateColumns: mainCols }}
       >
+        {/* Home — recent releases as a cover grid (rolling, by year tag). */}
+        {homeCollapsed ? (
+          <CollapsedStrip
+            title="Home"
+            icon={<LayoutGrid size={15} />}
+            onExpand={() => setHomeCollapsed(false)}
+          />
+        ) : (
+          <Section
+            title="Home"
+            icon={<LayoutGrid size={15} />}
+            iconOnly
+            elastic
+            className="min-w-0"
+            onTitleClick={() => setHomeCollapsed(true)}
+          >
+            <div className="flex-1 min-h-0 overflow-y-auto pr-1 [scrollbar-gutter:stable]">
+              {loadingAlbums ? (
+                <div className="px-2 py-4 text-sm text-muted flex items-center gap-2">
+                  <Loader2 size={14} className="animate-spin" /> {loadPhase}
+                </div>
+              ) : (
+                <HomeGrid
+                  albums={albums}
+                  filter={filter}
+                  onPlay={play}
+                  onAddToPlaylist={addToPlaylist}
+                  currentAlbumId={current?.albumId ?? null}
+                />
+              )}
+            </div>
+          </Section>
+        )}
+
         {/* Collection (with sort + filter) */}
         {colCollapsed ? (
           <CollapsedStrip
