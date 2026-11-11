@@ -4,14 +4,15 @@ import { COLLECTION_DND } from "../lib/dnd";
 import { matches, searchKey } from "../lib/search";
 import { fileSrc, listAlbumTracks, type Album, type Track } from "../lib/tauri";
 
-/** First release year Home shows: the year it was twelve months ago. Tags only
- *  carry a year, so the window is year-precise — in November 2026 it holds
- *  2025 and 2026, and from 1 January 2027 it rolls to 2026 and 2027. Folder
- *  dates were considered and rejected: bulk moves rewrote most of them. */
+/** How many release years Home spans, counting the current one. */
+const HOME_YEARS = 3;
+
+/** First release year Home shows. Tags only carry a year, so the window is
+ *  year-precise — in 2026 it holds 2024–2026, and from 1 January 2027 it rolls
+ *  to 2025–2027. Folder dates were considered and rejected: bulk moves
+ *  rewrote most of them. */
 export function homeSince(now: Date): number {
-  const d = new Date(now);
-  d.setFullYear(d.getFullYear() - 1);
-  return d.getFullYear();
+  return now.getFullYear() - (HOME_YEARS - 1);
 }
 
 /** Today's date, re-read hourly and on window focus, so a window left open

@@ -5,6 +5,13 @@ siblings (ndisc / ndisc.view / glmps), nplay is a local player and **not** a
 participant in the ndisc Nostr wire contract, so it tracks a single axis: this
 app's own semver, below.
 
+## 0.3.6 — 2026-11-12
+
+### Changed — Home spans three years
+
+Home now shows three release years, counting the current one: 2024–2026 today,
+2025–2027 from 1 January.
+
 ## 0.3.5 — 2026-11-10
 
 ### Added — Home: recent releases as covers
