@@ -2170,6 +2170,10 @@ fn spawn_audio_thread(
                 return;
             }
         };
+        // Windows only: WASAPI binds the stream to one endpoint, so the stream
+        // is rebound when the default output changes (see `win_output`).
+        #[cfg(target_os = "windows")]
+        let (mut _stream, mut handle) = (_stream, handle);
         let mut sink = match Sink::try_new(&handle) {
             Ok(s) => s,
             Err(e) => {
@@ -2177,6 +2181,8 @@ fn spawn_audio_thread(
                 return;
             }
         };
+        #[cfg(target_os = "windows")]
+        let mut follow = win_output::Follow::new();
         let mut volume: f32 = 1.0;
         // True while a track is loaded and expected to play to its end —
         // distinguishes a natural finish (sink empties on its own) from an
@@ -2231,6 +2237,8 @@ fn spawn_audio_thread(
                             sink.append(SpectrumTap::new(dec, spec.clone(), channels));
                             sink.play();
                             active = true;
+                            #[cfg(target_os = "windows")]
+                            follow.set_track(&path);
                         }
                         Err(e) => {
                             // Keep current playback running; flag for skip.
@@ -2264,6 +2272,17 @@ fn spawn_audio_thread(
                 Err(RecvTimeoutError::Disconnected) => break,
             }
 
+            #[cfg(target_os = "windows")]
+            follow.tick(
+                &mut _stream,
+                &mut handle,
+                &mut sink,
+                active,
+                volume,
+                &spec,
+                &cache_dir,
+            );
+
             // Publish status for the frontend poll.
             shared
                 .position_ms
@@ -2279,6 +2298,151 @@ fn spawn_audio_thread(
             }
         }
     });
+}
+
+/// Windows only: follow the default output device.
+///
+/// WASAPI binds an `OutputStream` to the endpoint that was default when it was
+/// opened, so connecting a Bluetooth speaker leaves playback on the old device.
+/// Linux needs none of this (PipeWire/Pulse move the stream themselves) and
+/// macOS is untested, so this module and every call into it is Windows-gated:
+/// the audio thread compiled elsewhere is unchanged.
+#[cfg(target_os = "windows")]
+mod win_output {
+    use super::{is_video, transcode_video_audio, SpectrumShared, SpectrumTap};
+    use rodio::cpal::traits::{DeviceTrait, HostTrait};
+    use rodio::{Decoder, OutputStream, OutputStreamHandle, Sink, Source};
+    use std::io::BufReader;
+    use std::path::Path;
+    use std::sync::atomic::Ordering;
+    use std::sync::Arc;
+    use std::time::{Duration, Instant};
+
+    const CHECK_EVERY: Duration = Duration::from_secs(1);
+
+    fn default_output_name() -> Option<String> {
+        rodio::cpal::default_host()
+            .default_output_device()
+            .and_then(|d| d.name().ok())
+    }
+
+    pub struct Follow {
+        /// Name of the device the open stream is bound to.
+        in_use: Option<String>,
+        /// Path of the track last loaded, to rebuild it on the new device.
+        track: Option<String>,
+        next_check: Instant,
+    }
+
+    impl Follow {
+        pub fn new() -> Self {
+            Self {
+                in_use: default_output_name(),
+                track: None,
+                next_check: Instant::now() + CHECK_EVERY,
+            }
+        }
+
+        pub fn set_track(&mut self, path: &str) {
+            self.track = Some(path.to_string());
+        }
+
+        /// Called on every loop pass; checks the default device about once a
+        /// second and, when it changed, moves playback onto it. On any failure
+        /// the old stream and sink are kept as they were.
+        #[allow(clippy::too_many_arguments)]
+        pub fn tick(
+            &mut self,
+            stream: &mut OutputStream,
+            handle: &mut OutputStreamHandle,
+            sink: &mut Sink,
+            active: bool,
+            volume: f32,
+            spec: &Arc<SpectrumShared>,
+            cache_dir: &Path,
+        ) {
+            let now = Instant::now();
+            if now < self.next_check {
+                return;
+            }
+            self.next_check = now + CHECK_EVERY;
+
+            let Some(name) = default_output_name() else {
+                return; // no default device right now; keep what we have
+            };
+            if self.in_use.as_deref() == Some(name.as_str()) {
+                return;
+            }
+
+            let (new_stream, new_handle) = match OutputStream::try_default() {
+                Ok(v) => v,
+                Err(e) => {
+                    eprintln!("audio: default output is now {name:?}, reopen failed: {e}");
+                    return;
+                }
+            };
+            let new_sink = match Sink::try_new(&new_handle) {
+                Ok(s) => s,
+                Err(e) => {
+                    eprintln!("audio: default output is now {name:?}, sink failed: {e}");
+                    return;
+                }
+            };
+            new_sink.set_volume(volume);
+
+            if active {
+                let Some(track) = self.track.clone() else {
+                    return;
+                };
+                let pos = sink.get_pos();
+                let paused = sink.is_paused();
+                let src = if is_video(Path::new(&track)) {
+                    // Cached WAV from the first play, so normally no transcode.
+                    match transcode_video_audio(&track, cache_dir) {
+                        Ok(p) => p,
+                        Err(e) => {
+                            eprintln!("audio: device change, video audio {track}: {e}");
+                            return;
+                        }
+                    }
+                } else {
+                    Path::new(&track).to_path_buf()
+                };
+                let mut dec = match std::fs::File::open(&src)
+                    .map_err(|e| e.to_string())
+                    .and_then(|f| Decoder::new(BufReader::new(f)).map_err(|e| e.to_string()))
+                {
+                    Ok(d) => d,
+                    Err(e) => {
+                        eprintln!("audio: device change, reload {track}: {e}");
+                        return;
+                    }
+                };
+                // Seek the decoder first so the first few ms on the new device
+                // are already the right audio; the sink seek below then sets
+                // the sink's own position counter, which `get_pos` reads.
+                let _ = dec.try_seek(pos);
+                let channels = dec.channels();
+                spec.sample_rate.store(dec.sample_rate(), Ordering::Relaxed);
+                if paused {
+                    new_sink.pause();
+                }
+                new_sink.append(SpectrumTap::new(dec, spec.clone(), channels));
+                let _ = new_sink.try_seek(pos);
+            }
+
+            // Commit: stop the old sink, then drop the old stream.
+            sink.stop();
+            *sink = new_sink;
+            *handle = new_handle;
+            *stream = new_stream;
+            eprintln!(
+                "audio: default output changed {:?} -> {name:?}, playback moved",
+                self.in_use
+            );
+            self.in_use = Some(name);
+        }
+    }
 }
 
 fn send(state: &State<AudioState>, cmd: AudioCmd) -> Result<(), String> {
