@@ -76,6 +76,7 @@ import {
   type Track,
 } from "./lib/tauri";
 import { buildXspf, parseXspf, type XspfItem } from "./lib/xspf";
+import { VersionChip } from "./components/VersionChip";
 
 const VOLUME_KEY = "nplay.volume";
 const THEME_KEY = "nplay.theme";
@@ -221,13 +222,6 @@ function usePersistedBool(key: string, def = false) {
   return [v, setV] as const;
 }
 
-// Suite rule (n-suite headers): the version chip shows only
-// major.minor.patch; any pre-release/build suffix (…-beta.2, +build) drops
-// to the tooltip so the chip keeps a fixed, consistent width as releases
-// move from 0.2.0-beta.2 toward 1.3.1.
-function shortVersion(v: string): string {
-  return v.split(/[-+]/)[0];
-}
 
 export default function App() {
   const [musicRoot, setRoot] = useState("");
@@ -1057,14 +1051,7 @@ export default function App() {
               <span className="text-mauve">play</span>
             </button>
           </h1>
-          {appVersion && (
-            <span
-              className="hidden md:inline-flex items-center px-2.5 py-2 rounded-md bg-surface text-mauve font-mono text-xs shrink-0"
-              title={`v${appVersion}`}
-            >
-              v{shortVersion(appVersion)}
-            </span>
-          )}
+          {appVersion && <VersionChip version={appVersion} />}
           <button
             onClick={chooseRoot}
             title="Choose music folder"
