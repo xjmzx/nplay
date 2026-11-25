@@ -33,6 +33,12 @@ import { CollapsedStrip } from "./components/CollapsedStrip";
 import { CurrentView } from "./components/CurrentView";
 import { LibraryTree, recentSince, type SortKey } from "./components/LibraryTree";
 import { HomeGrid } from "./components/HomeGrid";
+import {
+  HomeSizeToggle,
+  readHomeSize,
+  saveHomeSize,
+  type HomeSize,
+} from "./components/HomeSizeToggle";
 import { NowPlaying } from "./components/NowPlaying";
 import { Lyrics, LyricsEditor } from "./components/Lyrics";
 import { PlayerBar } from "./components/PlayerBar";
@@ -279,6 +285,9 @@ export default function App() {
   // Home is the opening screen: always expanded at launch, whatever it was
   // left as. Its collapse state lives for the session only.
   const [homeCollapsed, setHomeCollapsed] = useState(false);
+  // Home's cover size persists, unlike its collapse state.
+  const [homeSize, setHomeSize] = useState<HomeSize>(readHomeSize);
+  useEffect(() => saveHomeSize(homeSize), [homeSize]);
   const [colCollapsed, setColCollapsed] = usePersistedBool("nplay.col.collapsed");
   const [plCollapsed, setPlCollapsed] = usePersistedBool("nplay.playlist.collapsed");
   const [npCollapsed, setNpCollapsed] = usePersistedBool("nplay.nowplaying.collapsed");
@@ -1290,6 +1299,7 @@ export default function App() {
             elastic
             className="min-w-0"
             onTitleClick={() => setHomeCollapsed(true)}
+            actions={<HomeSizeToggle value={homeSize} onChange={setHomeSize} />}
           >
             <div className="flex-1 min-h-0 overflow-y-auto pr-1 [scrollbar-gutter:stable]">
               {loadingAlbums ? (
@@ -1303,6 +1313,7 @@ export default function App() {
                   onPlay={play}
                   onAddToPlaylist={addToPlaylist}
                   currentAlbumId={current?.albumId ?? null}
+                  size={homeSize}
                 />
               )}
             </div>

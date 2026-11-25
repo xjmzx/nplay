@@ -3,13 +3,23 @@ import { Film, Music4, Play, Plus } from "lucide-react";
 import { COLLECTION_DND } from "../lib/dnd";
 import { matches, searchKey } from "../lib/search";
 import { fileSrc, listAlbumTracks, type Album, type Track } from "../lib/tauri";
+import type { HomeSize } from "./HomeSizeToggle";
+
+/** Per cover size: the grid's minimum tile width (auto-fill, so the column
+ *  count follows Home's own width, which changes as other panels collapse)
+ *  and its gap. */
+const GRID: Record<HomeSize, string> = {
+  lg: "gap-3 grid-cols-[repeat(auto-fill,minmax(8.5rem,1fr))]",
+  md: "gap-2 grid-cols-[repeat(auto-fill,minmax(6rem,1fr))]",
+  sm: "gap-1.5 grid-cols-[repeat(auto-fill,minmax(4.5rem,1fr))]",
+};
 
 /** How many release years Home spans, counting the current one. */
-const HOME_YEARS = 3;
+const HOME_YEARS = 5;
 
 /** First release year Home shows. Tags only carry a year, so the window is
- *  year-precise — in 2026 it holds 2024–2026, and from 1 January 2027 it rolls
- *  to 2025–2027. Folder dates were considered and rejected: bulk moves
+ *  year-precise — in 2026 it holds 2022–2026, and from 1 January 2027 it rolls
+ *  to 2023–2027. Folder dates were considered and rejected: bulk moves
  *  rewrote most of them. */
 export function homeSince(now: Date): number {
   return now.getFullYear() - (HOME_YEARS - 1);
@@ -43,6 +53,7 @@ interface HomeGridProps {
   onAddToPlaylist: (tracks: Track[]) => void;
   /** Album of the track playing now, outlined in the grid. */
   currentAlbumId: number | null;
+  size: HomeSize;
 }
 
 // Memoized for the same reason as LibraryTree: keep the cover grid out of the
@@ -55,6 +66,7 @@ function HomeGridImpl({
   onPlay,
   onAddToPlaylist,
   currentAlbumId,
+  size,
 }: HomeGridProps) {
   const today = useToday();
   const since = homeSince(today);
@@ -111,12 +123,13 @@ function HomeGridImpl({
               {albums.length} {albums.length === 1 ? "release" : "releases"}
             </span>
           </div>
-          <div className="grid gap-3 grid-cols-[repeat(auto-fill,minmax(8.5rem,1fr))]">
+          <div className={"grid " + GRID[size]}>
             {albums.map((al) => (
               <Tile
                 key={al.id}
                 album={al}
                 playing={al.id === currentAlbumId}
+                size={size}
                 onPlay={() => withTracks(al.id, (t) => onPlay(t, 0))}
                 onAdd={() => withTracks(al.id, onAddToPlaylist)}
               />
@@ -131,11 +144,13 @@ function HomeGridImpl({
 function Tile({
   album,
   playing,
+  size,
   onPlay,
   onAdd,
 }: {
   album: Album;
   playing: boolean;
+  size: HomeSize;
   onPlay: () => void;
   onAdd: () => void;
 }) {
@@ -172,7 +187,7 @@ function Tile({
           />
         ) : (
           <div className="absolute inset-0 flex items-center justify-center">
-            <Music4 size={36} className="text-muted/40" strokeWidth={1.2} />
+            <Music4 size={size === "sm" ? 20 : size === "md" ? 28 : 36} className="text-muted/40" strokeWidth={1.2} />
           </div>
         )}
         {album.hasVideo && (
@@ -190,7 +205,7 @@ function Tile({
                      group-hover:bg-bg/45 transition-colors"
         >
           <Play
-            size={30}
+            size={size === "sm" ? 18 : size === "md" ? 24 : 30}
             fill="currentColor"
             className="text-fg opacity-0 group-hover:opacity-90 transition-opacity"
           />
@@ -205,19 +220,36 @@ function Tile({
           <Plus size={14} />
         </button>
       </div>
-      <div className="mt-1.5 px-0.5">
-        <div className="text-[13px] text-fg truncate" title={album.album}>
+      {/* Small covers keep only the album title; artist and label move to
+          the tooltip, which a 4.5rem tile has no room to print. */}
+      {size === "sm" ? (
+        <div
+          className="mt-1 px-0.5 text-[11px] text-fg/80 truncate"
+          title={[album.album, album.artist, album.label].filter(Boolean).join(" · ")}
+        >
           {album.album}
         </div>
-        <div className="text-[12px] text-fg/60 truncate" title={album.artist}>
-          {album.artist}
-        </div>
-        {album.label && (
-          <div className="text-[11px] text-muted truncate" title={album.label}>
-            {album.label}
+      ) : (
+        <div className={size === "md" ? "mt-1 px-0.5" : "mt-1.5 px-0.5"}>
+          <div
+            className={(size === "md" ? "text-[12px]" : "text-[13px]") + " text-fg truncate"}
+            title={album.album}
+          >
+            {album.album}
           </div>
-        )}
-      </div>
+          <div
+            className={(size === "md" ? "text-[11px]" : "text-[12px]") + " text-fg/60 truncate"}
+            title={album.artist}
+          >
+            {album.artist}
+          </div>
+          {album.label && (
+            <div className="text-[11px] text-muted truncate" title={album.label}>
+              {album.label}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

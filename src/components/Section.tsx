@@ -25,6 +25,10 @@ interface SectionProps {
   // and, when collapsible, the chevron. Requires a string title for the
   // tooltip to read.
   iconOnly?: boolean;
+  // Controls shown at the right of the header, before the chevron. Their
+  // clicks stop at the wrapper, so on a collapsible header they act without
+  // collapsing the panel; the rest of the bar still toggles it.
+  actions?: ReactNode;
 }
 
 export function Section({
@@ -36,6 +40,7 @@ export function Section({
   onTitleClick,
   elastic,
   iconOnly,
+  actions,
 }: SectionProps) {
   const titleText = typeof title === "string" ? title : undefined;
   return (
@@ -72,8 +77,19 @@ export function Section({
         <h2 className={cn("text-sm tracking-wide uppercase", iconOnly && "sr-only")}>
           {title}
         </h2>
+        {actions && (
+          <div
+            className="ml-auto flex items-center cursor-default"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {actions}
+          </div>
+        )}
         {onTitleClick && (
-          <ChevronDown size={14} className="ml-auto text-muted shrink-0" />
+          <ChevronDown
+            size={14}
+            className={cn("text-muted shrink-0", !actions && "ml-auto")}
+          />
         )}
       </header>
       <div

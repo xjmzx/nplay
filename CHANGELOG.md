@@ -5,6 +5,22 @@ siblings (ndisc / ndisc.view / glmps), nplay is a local player and **not** a
 participant in the ndisc Nostr wire contract, so it tracks a single axis: this
 app's own semver, below.
 
+## 0.3.8 — 2026-11-25
+
+### Added — Home cover sizes
+
+Home's header carries a three-way size toggle — large, medium and small covers
+(the same icons as ndisc's Home grid). Columns still follow Home's own width, so
+a smaller size fits more covers in whatever room Home has. Small covers show
+only the album title; artist and label move to the tooltip. The choice persists.
+Clicking the toggle changes the size only; the rest of the header bar still
+collapses Home.
+
+### Changed — Home spans five years
+
+Home now shows five release years, counting the current one: 2022–2026 today,
+2023–2027 from 1 January.
+
 ## 0.3.7 — 2026-11-24
 
 ### Added — update check on the version chip
